@@ -1,0 +1,42 @@
+{
+  "q_001": {
+    "sql": "SELECT COUNT(*) AS account_count\nFROM account a\nJOIN district d ON a.district_id = d.district_id\nWHERE d.A3 = 'Prague'",
+    "answer": "account_count = 554"
+  },
+  "q_002": {
+    "sql": "SELECT SUM(amount) AS total_approved_amount\nFROM loan\nWHERE status = 'A'",
+    "answer": "total_approved_amount = 18,603,216"
+  },
+  "q_003": {
+    "sql": "SELECT COUNT(*) AS owner_dispositions\nFROM disp\nWHERE type = 'OWNER'",
+    "answer": "owner_dispositions = 4,500"
+  },
+  "q_004": {
+    "sql": "SELECT ROUND(AVG(payments), 2) AS avg_monthly_payment FROM loan",
+    "answer": "avg_monthly_payment = 4,190.66"
+  },
+  "q_005": {
+    "sql": "SELECT COUNT(*) AS female_clients\nFROM client AS c\nJOIN district AS d ON c.district_id = d.district_id\nWHERE c.gender = 'F'\n  AND d.A11 > 10000",
+    "answer": "female_clients = 636"
+  },
+  "q_006": {
+    "sql": "SELECT COUNT(DISTINCT d.client_id) AS distinct_owner_clients\nFROM disp d\nJOIN account a ON d.account_id = a.account_id\nJOIN district di ON a.district_id = di.district_id\nWHERE d.type = 'OWNER'\n  AND di.A3 = 'Prague'",
+    "answer": "distinct_owner_clients = 554"
+  },
+  "q_007": {
+    "sql": "SELECT SUM(amount) AS total_amount\nFROM trans\nWHERE account_id = 1 AND strftime('%Y', date) = '1997'",
+    "answer": "total_amount = 96,418"
+  },
+  "q_008": {
+    "sql": "SELECT d.A2 AS district_name,\n       COUNT(DISTINCT p.client_id) AS owner_count\nFROM district d\nLEFT JOIN account a\n  ON a.district_id = d.district_id\nLEFT JOIN disp p\n  ON p.account_id = a.account_id\n AND p.type = 'OWNER'\nWHERE d.A3 = 'south Moravia'\nGROUP BY d.district_id, d.A2\nORDER BY owner_count DESC, district_name",
+    "answer": "14 rows (showing first 5): district_name=Brno - mesto, owner_count=128; district_name=Zlin, owner_count=92; district_name=Kromeriz, owner_count=57; district_name=Brno - venkov, owner_count=53; district_name=Zdar nad Sazavou, owner_count=53"
+  },
+  "q_009": {
+    "sql": "SELECT c.client_id, c.gender, SUM(l.amount) AS total_loan_amount\nFROM client c\nJOIN disp d ON d.client_id = c.client_id AND d.type = 'OWNER'\nJOIN account a ON a.account_id = d.account_id\nJOIN loan l ON l.account_id = a.account_id\nGROUP BY c.client_id, c.gender\nORDER BY total_loan_amount DESC\nLIMIT 5",
+    "answer": "5 rows: client_id=9,340, gender=M, total_loan_amount=590,820; client_id=10,997, gender=F, total_loan_amount=566,640; client_id=2,823, gender=F, total_loan_amount=541,200; client_id=981, gender=M, total_loan_amount=538,500; client_id=3,546, gender=M, total_loan_amount=504,000"
+  },
+  "q_010": {
+    "sql": "SELECT COUNT(DISTINCT l.loan_id) AS running_good_standing_loans\nFROM loan AS l\nJOIN disp AS d\n  ON d.account_id = l.account_id\n AND d.type = 'OWNER'\nJOIN client AS c\n  ON c.client_id = d.client_id\nJOIN district AS di\n  ON di.district_id = c.district_id\nWHERE l.status = 'C'\n  AND c.gender = 'M'\n  AND di.A3 = 'north Bohemia'",
+    "answer": "running_good_standing_loans = 18"
+  }
+}

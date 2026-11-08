@@ -1,0 +1,494 @@
+{
+  "summary": {
+    "mode": "agent",
+    "model": "accounts/fireworks/models/gpt-oss-120b",
+    "runs": 3.0,
+    "accuracy_strict": 1.0,
+    "accuracy_lenient": 1.0,
+    "executable_rate": 1.0,
+    "latency_p50_s": 1.622,
+    "latency_p95_s": 3.957,
+    "avg_llm_calls": 1.5,
+    "avg_prompt_tokens": 4519,
+    "avg_completion_tokens": 281
+  },
+  "predictions": [
+    {
+      "id": "q_001",
+      "sql": "SELECT COUNT(*) AS account_count\nFROM account a\nJOIN district d ON a.district_id = d.district_id\nWHERE d.A3 = 'Prague'",
+      "answer": "account_count = 554",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.61,
+      "llm_calls": 1,
+      "prompt_tokens": 2953,
+      "completion_tokens": 151,
+      "trace": [
+        "llm: -> submit_answer (1.61s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS account_count\\nFROM account a\\nJOIN district d ON a.district_id = d.district_id\\nWHERE d.A3 = 'Prague';\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_002",
+      "sql": "SELECT SUM(amount) AS total_approved_amount FROM loan WHERE status = 'A'",
+      "answer": "total_approved_amount = 18,603,216",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.622,
+      "llm_calls": 1,
+      "prompt_tokens": 2962,
+      "completion_tokens": 153,
+      "trace": [
+        "llm: -> submit_answer (1.62s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT SUM(amount) AS total_approved_amount FROM loan WHERE status = 'A';\",\n\"assumptions\": \"Status 'A' means contract finished and fully paid with no problems.\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_003",
+      "sql": "SELECT COUNT(*) AS owner_dispositions FROM disp WHERE type = 'OWNER'",
+      "answer": "owner_dispositions = 4,500",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 0.69,
+      "llm_calls": 1,
+      "prompt_tokens": 2954,
+      "completion_tokens": 91,
+      "trace": [
+        "llm: -> submit_answer (0.69s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS owner_dispositions FROM disp WHERE type = 'OWNER';\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_004",
+      "sql": "SELECT ROUND(AVG(payments), 2) AS avg_monthly_payment FROM loan",
+      "answer": "avg_monthly_payment = 4,190.66",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.869,
+      "llm_calls": 1,
+      "prompt_tokens": 2954,
+      "completion_tokens": 79,
+      "trace": [
+        "llm: -> submit_answer (1.87s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT ROUND(AVG(payments), 2) AS avg_monthly_payment FROM loan;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_005",
+      "sql": "SELECT COUNT(*) AS female_clients_count\nFROM client c\nJOIN district d ON c.district_id = d.district_id\nWHERE c.gender = 'F' AND d.A11 > 10000",
+      "answer": "female_clients_count = 636",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.433,
+      "llm_calls": 1,
+      "prompt_tokens": 2961,
+      "completion_tokens": 152,
+      "trace": [
+        "llm: -> submit_answer (1.43s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS female_clients_count\\nFROM client c\\nJOIN district d ON c.district_id = d.district_id\\nWHERE c.gender = 'F' AND d.A11 > 10000;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_006",
+      "sql": "SELECT COUNT(DISTINCT d.client_id) AS owner_clients\nFROM disp d\nJOIN account a      ON d.account_id = a.account_id\nJOIN district di    ON a.district_id = di.district_id\nWHERE d.type = 'OWNER'\n  AND di.A3 = 'Prague'",
+      "answer": "owner_clients = 554",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.471,
+      "llm_calls": 2,
+      "prompt_tokens": 6025,
+      "completion_tokens": 343,
+      "trace": [
+        "llm: -> run_sql (1.37s)",
+        "tool: run_sql({\n\"sql\": \"SELECT COUNT(DISTINCT d.client_id) AS owner_clients\\nFROM disp d\\nJOIN account a ON d.account_id = a.account_id\\nJOIN district di ON a.district_id = di.district_id\\nWHERE d.type = 'OWNER' AND di.A3 = 'Prague';\"\n}) (0.00s)",
+        "llm: -> text reply (1.10s)"
+      ]
+    },
+    {
+      "id": "q_007",
+      "sql": "SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997'",
+      "answer": "total_amount = 96,418",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.076,
+      "llm_calls": 2,
+      "prompt_tokens": 5991,
+      "completion_tokens": 216,
+      "trace": [
+        "llm: -> run_sql (1.04s)",
+        "tool: run_sql({\n\"sql\": \"SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997';\"\n}) (0.04s)",
+        "llm: -> submit_answer (0.97s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997';\",\n\"assumptions\": \"\"\n}) (0.03s)"
+      ]
+    },
+    {
+      "id": "q_008",
+      "sql": "SELECT d.A2 AS district_name,\n       COUNT(DISTINCT disp.client_id) AS owner_count\nFROM district d\nJOIN account a ON a.district_id = d.district_id\nJOIN disp ON disp.account_id = a.account_id AND disp.type = 'OWNER'\nWHERE d.A3 = 'south Moravia'\nGROUP BY d.district_id, d.A2\nORDER BY owner_count DESC",
+      "answer": "14 rows (showing first 5): district_name=Brno - mesto, owner_count=128; district_name=Zlin, owner_count=92; district_name=Kromeriz, owner_count=57; district_name=Brno - venkov, owner_count=53; district_name=Zdar nad Sazavou, owner_count=53",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 4.051,
+      "llm_calls": 2,
+      "prompt_tokens": 6187,
+      "completion_tokens": 588,
+      "trace": [
+        "llm: -> run_sql (2.03s)",
+        "tool: run_sql({\n\"sql\": \"SELECT d.A2 AS district_name,\\n       COUNT(DISTINCT disp.client_id) AS owner_count\\nFROM district d\\nJOIN account a ON a.district_id = d.district_id\\nJOIN disp ON disp.account_id = a.account_id AND disp.type = 'OWNER'\\nWHERE d.A3 = 'south Moravia'\\nGROUP BY d.district_id, d.A2\\nORDER BY owner_count DESC;\"\n}) (0.00s)",
+        "llm: -> text reply (2.02s)",
+        "fallback: used last successful run_sql result (0.00s)"
+      ]
+    },
+    {
+      "id": "q_009",
+      "sql": "SELECT c.client_id AS client_id,\n       c.gender,\n       SUM(l.amount) AS total_loan_amount\nFROM disp d\nJOIN client c ON d.client_id = c.client_id\nJOIN loan l ON d.account_id = l.account_id\nWHERE d.type = 'OWNER'\nGROUP BY c.client_id, c.gender\nORDER BY total_loan_amount DESC\nLIMIT 5",
+      "answer": "5 rows: client_id=9,340, gender=M, total_loan_amount=590,820; client_id=10,997, gender=F, total_loan_amount=566,640; client_id=2,823, gender=F, total_loan_amount=541,200; client_id=981, gender=M, total_loan_amount=538,500; client_id=3,546, gender=M, total_loan_amount=504,000",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.867,
+      "llm_calls": 2,
+      "prompt_tokens": 6120,
+      "completion_tokens": 509,
+      "trace": [
+        "llm: -> run_sql (1.74s)",
+        "tool: run_sql({\n\"sql\": \"SELECT c.client_id AS client_id,\\n       c.gender,\\n       SUM(l.amount) AS total_loan_amount\\nFROM disp d\\nJOIN client c ON d.client_id = c.client_id\\nJOIN loan l ON d.account_id = l.account_id\\nWHERE d.type = 'OWNER'\\nGROUP BY c.client_id, c.gender\\nORDER BY total_loan_amount DESC\\nLIMIT 5;\"\n}) (0.00s)",
+        "llm: -> submit_answer (1.12s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT c.client_id AS client_id,\\n       c.gender,\\n       SUM(l.amount) AS total_loan_amount\\nFROM disp d\\nJOIN client c ON d.client_id = c.client_id\\nJOIN loan l ON d.account_id = l.account_id\\nWHERE d.type = 'OWNER'\\nGROUP BY c.client_id, c.gender\\nORDER BY total_loan_amount DESC\\nLIMIT 5;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_010",
+      "sql": "SELECT COUNT(*) AS loan_count\nFROM loan l\nJOIN account a ON l.account_id = a.account_id\nJOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\nJOIN client c ON d.client_id = c.client_id\nJOIN district di ON c.district_id = di.district_id\nWHERE l.status = 'C'\n  AND c.gender = 'M'\n  AND di.A3 = 'north Bohemia'",
+      "answer": "loan_count = 18",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 3.642,
+      "llm_calls": 2,
+      "prompt_tokens": 6083,
+      "completion_tokens": 525,
+      "trace": [
+        "llm: -> run_sql (2.83s)",
+        "tool: run_sql({\n\"sql\": \"SELECT COUNT(*) AS loan_count\\nFROM loan l\\nJOIN account a ON l.account_id = a.account_id\\nJOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\\nJOIN client c ON d.client_id = c.client_id\\nJOIN district di ON c.district_id = di.district_id\\nWHERE l.status = 'C'\\n  AND c.gender = 'M'\\n  AND di.A3 = 'north Bohemia';\"\n}) (0.00s)",
+        "llm: -> text reply (0.81s)",
+        "fallback: used last successful run_sql result (0.00s)"
+      ]
+    },
+    {
+      "id": "q_001",
+      "sql": "SELECT COUNT(*) AS account_count\nFROM account a\nJOIN district d ON a.district_id = d.district_id\nWHERE d.A3 = 'Prague'",
+      "answer": "account_count = 554",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.169,
+      "llm_calls": 1,
+      "prompt_tokens": 2953,
+      "completion_tokens": 151,
+      "trace": [
+        "llm: -> submit_answer (1.17s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS account_count\\nFROM account a\\nJOIN district d ON a.district_id = d.district_id\\nWHERE d.A3 = 'Prague';\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_002",
+      "sql": "SELECT SUM(amount) AS total_approved_amount FROM loan WHERE status = 'A'",
+      "answer": "total_approved_amount = 18,603,216",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.052,
+      "llm_calls": 1,
+      "prompt_tokens": 2962,
+      "completion_tokens": 153,
+      "trace": [
+        "llm: -> submit_answer (1.05s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT SUM(amount) AS total_approved_amount FROM loan WHERE status = 'A';\",\n\"assumptions\": \"Status 'A' means contract finished and fully paid with no problems.\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_003",
+      "sql": "SELECT COUNT(*) AS owner_dispositions FROM disp WHERE type = 'OWNER'",
+      "answer": "owner_dispositions = 4,500",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.035,
+      "llm_calls": 1,
+      "prompt_tokens": 2954,
+      "completion_tokens": 91,
+      "trace": [
+        "llm: -> submit_answer (1.03s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS owner_dispositions FROM disp WHERE type = 'OWNER';\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_004",
+      "sql": "SELECT ROUND(AVG(payments), 2) AS avg_monthly_payment FROM loan",
+      "answer": "avg_monthly_payment = 4,190.66",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 0.513,
+      "llm_calls": 1,
+      "prompt_tokens": 2954,
+      "completion_tokens": 79,
+      "trace": [
+        "llm: -> submit_answer (0.51s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT ROUND(AVG(payments), 2) AS avg_monthly_payment FROM loan;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_005",
+      "sql": "SELECT COUNT(*) AS female_clients_count\nFROM client c\nJOIN district d ON c.district_id = d.district_id\nWHERE c.gender = 'F' AND d.A11 > 10000",
+      "answer": "female_clients_count = 636",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 0.778,
+      "llm_calls": 1,
+      "prompt_tokens": 2961,
+      "completion_tokens": 152,
+      "trace": [
+        "llm: -> submit_answer (0.78s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS female_clients_count\\nFROM client c\\nJOIN district d ON c.district_id = d.district_id\\nWHERE c.gender = 'F' AND d.A11 > 10000;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_006",
+      "sql": "SELECT COUNT(DISTINCT d.client_id) AS owner_clients\nFROM disp d\nJOIN account a      ON d.account_id = a.account_id\nJOIN district di    ON a.district_id = di.district_id\nWHERE d.type = 'OWNER'\n  AND di.A3 = 'Prague'",
+      "answer": "owner_clients = 554",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.958,
+      "llm_calls": 2,
+      "prompt_tokens": 6025,
+      "completion_tokens": 343,
+      "trace": [
+        "llm: -> run_sql (1.18s)",
+        "tool: run_sql({\n\"sql\": \"SELECT COUNT(DISTINCT d.client_id) AS owner_clients\\nFROM disp d\\nJOIN account a ON d.account_id = a.account_id\\nJOIN district di ON a.district_id = di.district_id\\nWHERE d.type = 'OWNER' AND di.A3 = 'Prague';\"\n}) (0.00s)",
+        "llm: -> text reply (0.77s)"
+      ]
+    },
+    {
+      "id": "q_007",
+      "sql": "SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997'",
+      "answer": "total_amount = 96,418",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.791,
+      "llm_calls": 2,
+      "prompt_tokens": 5991,
+      "completion_tokens": 216,
+      "trace": [
+        "llm: -> run_sql (1.01s)",
+        "tool: run_sql({\n\"sql\": \"SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997';\"\n}) (0.07s)",
+        "llm: -> submit_answer (0.68s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997';\",\n\"assumptions\": \"\"\n}) (0.04s)"
+      ]
+    },
+    {
+      "id": "q_008",
+      "sql": "SELECT d.A2 AS district_name,\n       COUNT(DISTINCT disp.client_id) AS owner_count\nFROM district d\nJOIN account a ON a.district_id = d.district_id\nJOIN disp ON disp.account_id = a.account_id AND disp.type = 'OWNER'\nWHERE d.A3 = 'south Moravia'\nGROUP BY d.district_id, d.A2\nORDER BY owner_count DESC",
+      "answer": "14 rows (showing first 5): district_name=Brno - mesto, owner_count=128; district_name=Zlin, owner_count=92; district_name=Kromeriz, owner_count=57; district_name=Brno - venkov, owner_count=53; district_name=Zdar nad Sazavou, owner_count=53",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 3.957,
+      "llm_calls": 2,
+      "prompt_tokens": 6187,
+      "completion_tokens": 588,
+      "trace": [
+        "llm: -> run_sql (2.60s)",
+        "tool: run_sql({\n\"sql\": \"SELECT d.A2 AS district_name,\\n       COUNT(DISTINCT disp.client_id) AS owner_count\\nFROM district d\\nJOIN account a ON a.district_id = d.district_id\\nJOIN disp ON disp.account_id = a.account_id AND disp.type = 'OWNER'\\nWHERE d.A3 = 'south Moravia'\\nGROUP BY d.district_id, d.A2\\nORDER BY owner_count DESC;\"\n}) (0.00s)",
+        "llm: -> text reply (1.36s)",
+        "fallback: used last successful run_sql result (0.00s)"
+      ]
+    },
+    {
+      "id": "q_009",
+      "sql": "SELECT c.client_id AS client_id,\n       c.gender,\n       SUM(l.amount) AS total_loan_amount\nFROM disp d\nJOIN client c ON d.client_id = c.client_id\nJOIN loan l ON d.account_id = l.account_id\nWHERE d.type = 'OWNER'\nGROUP BY c.client_id, c.gender\nORDER BY total_loan_amount DESC\nLIMIT 5",
+      "answer": "5 rows: client_id=9,340, gender=M, total_loan_amount=590,820; client_id=10,997, gender=F, total_loan_amount=566,640; client_id=2,823, gender=F, total_loan_amount=541,200; client_id=981, gender=M, total_loan_amount=538,500; client_id=3,546, gender=M, total_loan_amount=504,000",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.498,
+      "llm_calls": 2,
+      "prompt_tokens": 6120,
+      "completion_tokens": 509,
+      "trace": [
+        "llm: -> run_sql (1.42s)",
+        "tool: run_sql({\n\"sql\": \"SELECT c.client_id AS client_id,\\n       c.gender,\\n       SUM(l.amount) AS total_loan_amount\\nFROM disp d\\nJOIN client c ON d.client_id = c.client_id\\nJOIN loan l ON d.account_id = l.account_id\\nWHERE d.type = 'OWNER'\\nGROUP BY c.client_id, c.gender\\nORDER BY total_loan_amount DESC\\nLIMIT 5;\"\n}) (0.00s)",
+        "llm: -> submit_answer (1.07s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT c.client_id AS client_id,\\n       c.gender,\\n       SUM(l.amount) AS total_loan_amount\\nFROM disp d\\nJOIN client c ON d.client_id = c.client_id\\nJOIN loan l ON d.account_id = l.account_id\\nWHERE d.type = 'OWNER'\\nGROUP BY c.client_id, c.gender\\nORDER BY total_loan_amount DESC\\nLIMIT 5;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_010",
+      "sql": "SELECT COUNT(*) AS loan_count\nFROM loan l\nJOIN account a ON l.account_id = a.account_id\nJOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\nJOIN client c ON d.client_id = c.client_id\nJOIN district di ON c.district_id = di.district_id\nWHERE l.status = 'C'\n  AND c.gender = 'M'\n  AND di.A3 = 'north Bohemia'",
+      "answer": "loan_count = 18",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.469,
+      "llm_calls": 2,
+      "prompt_tokens": 6083,
+      "completion_tokens": 525,
+      "trace": [
+        "llm: -> run_sql (1.77s)",
+        "tool: run_sql({\n\"sql\": \"SELECT COUNT(*) AS loan_count\\nFROM loan l\\nJOIN account a ON l.account_id = a.account_id\\nJOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\\nJOIN client c ON d.client_id = c.client_id\\nJOIN district di ON c.district_id = di.district_id\\nWHERE l.status = 'C'\\n  AND c.gender = 'M'\\n  AND di.A3 = 'north Bohemia';\"\n}) (0.00s)",
+        "llm: -> text reply (0.69s)",
+        "fallback: used last successful run_sql result (0.00s)"
+      ]
+    },
+    {
+      "id": "q_001",
+      "sql": "SELECT COUNT(*) AS account_count\nFROM account a\nJOIN district d ON a.district_id = d.district_id\nWHERE d.A3 = 'Prague'",
+      "answer": "account_count = 554",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 0.738,
+      "llm_calls": 1,
+      "prompt_tokens": 2953,
+      "completion_tokens": 151,
+      "trace": [
+        "llm: -> submit_answer (0.74s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS account_count\\nFROM account a\\nJOIN district d ON a.district_id = d.district_id\\nWHERE d.A3 = 'Prague';\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_002",
+      "sql": "SELECT SUM(amount) AS total_approved_amount FROM loan WHERE status = 'A'",
+      "answer": "total_approved_amount = 18,603,216",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 0.895,
+      "llm_calls": 1,
+      "prompt_tokens": 2962,
+      "completion_tokens": 153,
+      "trace": [
+        "llm: -> submit_answer (0.89s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT SUM(amount) AS total_approved_amount FROM loan WHERE status = 'A';\",\n\"assumptions\": \"Status 'A' means contract finished and fully paid with no problems.\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_003",
+      "sql": "SELECT COUNT(*) AS owner_dispositions FROM disp WHERE type = 'OWNER'",
+      "answer": "owner_dispositions = 4,500",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 0.735,
+      "llm_calls": 1,
+      "prompt_tokens": 2954,
+      "completion_tokens": 91,
+      "trace": [
+        "llm: -> submit_answer (0.73s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS owner_dispositions FROM disp WHERE type = 'OWNER';\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_004",
+      "sql": "SELECT ROUND(AVG(payments), 2) AS avg_monthly_payment FROM loan",
+      "answer": "avg_monthly_payment = 4,190.66",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 0.524,
+      "llm_calls": 1,
+      "prompt_tokens": 2954,
+      "completion_tokens": 79,
+      "trace": [
+        "llm: -> submit_answer (0.52s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT ROUND(AVG(payments), 2) AS avg_monthly_payment FROM loan;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_005",
+      "sql": "SELECT COUNT(*) AS female_clients_count\nFROM client c\nJOIN district d ON c.district_id = d.district_id\nWHERE c.gender = 'F' AND d.A11 > 10000",
+      "answer": "female_clients_count = 636",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.019,
+      "llm_calls": 1,
+      "prompt_tokens": 2961,
+      "completion_tokens": 152,
+      "trace": [
+        "llm: -> submit_answer (1.02s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT COUNT(*) AS female_clients_count\\nFROM client c\\nJOIN district d ON c.district_id = d.district_id\\nWHERE c.gender = 'F' AND d.A11 > 10000;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_006",
+      "sql": "SELECT COUNT(DISTINCT d.client_id) AS owner_clients\nFROM disp d\nJOIN account a      ON d.account_id = a.account_id\nJOIN district di    ON a.district_id = di.district_id\nWHERE d.type = 'OWNER'\n  AND di.A3 = 'Prague'",
+      "answer": "owner_clients = 554",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.769,
+      "llm_calls": 2,
+      "prompt_tokens": 6025,
+      "completion_tokens": 343,
+      "trace": [
+        "llm: -> run_sql (0.99s)",
+        "tool: run_sql({\n\"sql\": \"SELECT COUNT(DISTINCT d.client_id) AS owner_clients\\nFROM disp d\\nJOIN account a ON d.account_id = a.account_id\\nJOIN district di ON a.district_id = di.district_id\\nWHERE d.type = 'OWNER' AND di.A3 = 'Prague';\"\n}) (0.00s)",
+        "llm: -> text reply (0.77s)"
+      ]
+    },
+    {
+      "id": "q_007",
+      "sql": "SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997'",
+      "answer": "total_amount = 96,418",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 1.527,
+      "llm_calls": 2,
+      "prompt_tokens": 5991,
+      "completion_tokens": 216,
+      "trace": [
+        "llm: -> run_sql (0.99s)",
+        "tool: run_sql({\n\"sql\": \"SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997';\"\n}) (0.09s)",
+        "llm: -> submit_answer (0.40s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT SUM(amount) AS total_amount FROM trans WHERE account_id = 1 AND strftime('%Y', date) = '1997';\",\n\"assumptions\": \"\"\n}) (0.04s)"
+      ]
+    },
+    {
+      "id": "q_008",
+      "sql": "SELECT d.A2 AS district_name,\n       COUNT(DISTINCT disp.client_id) AS owner_count\nFROM district d\nJOIN account a ON a.district_id = d.district_id\nJOIN disp ON disp.account_id = a.account_id AND disp.type = 'OWNER'\nWHERE d.A3 = 'south Moravia'\nGROUP BY d.district_id, d.A2\nORDER BY owner_count DESC",
+      "answer": "14 rows (showing first 5): district_name=Brno - mesto, owner_count=128; district_name=Zlin, owner_count=92; district_name=Kromeriz, owner_count=57; district_name=Brno - venkov, owner_count=53; district_name=Zdar nad Sazavou, owner_count=53",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.663,
+      "llm_calls": 2,
+      "prompt_tokens": 6187,
+      "completion_tokens": 588,
+      "trace": [
+        "llm: -> run_sql (1.55s)",
+        "tool: run_sql({\n\"sql\": \"SELECT d.A2 AS district_name,\\n       COUNT(DISTINCT disp.client_id) AS owner_count\\nFROM district d\\nJOIN account a ON a.district_id = d.district_id\\nJOIN disp ON disp.account_id = a.account_id AND disp.type = 'OWNER'\\nWHERE d.A3 = 'south Moravia'\\nGROUP BY d.district_id, d.A2\\nORDER BY owner_count DESC;\"\n}) (0.01s)",
+        "llm: -> text reply (1.11s)",
+        "fallback: used last successful run_sql result (0.00s)"
+      ]
+    },
+    {
+      "id": "q_009",
+      "sql": "SELECT c.client_id AS client_id,\n       c.gender,\n       SUM(l.amount) AS total_loan_amount\nFROM disp d\nJOIN client c ON d.client_id = c.client_id\nJOIN loan l ON d.account_id = l.account_id\nWHERE d.type = 'OWNER'\nGROUP BY c.client_id, c.gender\nORDER BY total_loan_amount DESC\nLIMIT 5",
+      "answer": "5 rows: client_id=9,340, gender=M, total_loan_amount=590,820; client_id=10,997, gender=F, total_loan_amount=566,640; client_id=2,823, gender=F, total_loan_amount=541,200; client_id=981, gender=M, total_loan_amount=538,500; client_id=3,546, gender=M, total_loan_amount=504,000",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.707,
+      "llm_calls": 2,
+      "prompt_tokens": 6120,
+      "completion_tokens": 509,
+      "trace": [
+        "llm: -> run_sql (1.47s)",
+        "tool: run_sql({\n\"sql\": \"SELECT c.client_id AS client_id,\\n       c.gender,\\n       SUM(l.amount) AS total_loan_amount\\nFROM disp d\\nJOIN client c ON d.client_id = c.client_id\\nJOIN loan l ON d.account_id = l.account_id\\nWHERE d.type = 'OWNER'\\nGROUP BY c.client_id, c.gender\\nORDER BY total_loan_amount DESC\\nLIMIT 5;\"\n}) (0.01s)",
+        "llm: -> submit_answer (1.23s)",
+        "tool: submit_answer({\n\"sql\": \"SELECT c.client_id AS client_id,\\n       c.gender,\\n       SUM(l.amount) AS total_loan_amount\\nFROM disp d\\nJOIN client c ON d.client_id = c.client_id\\nJOIN loan l ON d.account_id = l.account_id\\nWHERE d.type = 'OWNER'\\nGROUP BY c.client_id, c.gender\\nORDER BY total_loan_amount DESC\\nLIMIT 5;\",\n\"assumptions\": \"\"\n}) (0.00s)"
+      ]
+    },
+    {
+      "id": "q_010",
+      "sql": "SELECT COUNT(*) AS loan_count\nFROM loan l\nJOIN account a ON l.account_id = a.account_id\nJOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\nJOIN client c ON d.client_id = c.client_id\nJOIN district di ON c.district_id = di.district_id\nWHERE l.status = 'C'\n  AND c.gender = 'M'\n  AND di.A3 = 'north Bohemia'",
+      "answer": "loan_count = 18",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 2.901,
+      "llm_calls": 2,
+      "prompt_tokens": 6083,
+      "completion_tokens": 525,
+      "trace": [
+        "llm: -> run_sql (1.71s)",
+        "tool: run_sql({\n\"sql\": \"SELECT COUNT(*) AS loan_count\\nFROM loan l\\nJOIN account a ON l.account_id = a.account_id\\nJOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\\nJOIN client c ON d.client_id = c.client_id\\nJOIN district di ON c.district_id = di.district_id\\nWHERE l.status = 'C'\\n  AND c.gender = 'M'\\n  AND di.A3 = 'north Bohemia';\"\n}) (0.00s)",
+        "llm: -> text reply (1.19s)",
+        "fallback: used last successful run_sql result (0.00s)"
+      ]
+    }
+  ]
+}

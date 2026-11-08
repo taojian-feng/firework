@@ -1,0 +1,137 @@
+{
+  "summary": {
+    "mode": "baseline",
+    "model": "accounts/fireworks/models/kimi-k3",
+    "runs": 1.0,
+    "accuracy_strict": 0.5,
+    "accuracy_lenient": 0.5,
+    "executable_rate": 0.5,
+    "latency_p50_s": 8.86,
+    "latency_p95_s": 23.995,
+    "avg_llm_calls": 1,
+    "avg_prompt_tokens": 46,
+    "avg_completion_tokens": 590
+  },
+  "predictions": [
+    {
+      "id": "q_001",
+      "sql": "SELECT COUNT(*) AS num_accounts\nFROM account a\nJOIN district d ON a.district_id = d.district_id\nWHERE d.A3 = 'Prague';",
+      "answer": "num_accounts = 554",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 10.863,
+      "llm_calls": 1,
+      "prompt_tokens": 38,
+      "completion_tokens": 615,
+      "trace": []
+    },
+    {
+      "id": "q_002",
+      "sql": "SELECT SUM(amount) AS total_approved_loan_amount\nFROM loan\nWHERE status = 'A';",
+      "answer": "total_approved_loan_amount = 18,603,216",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 4.685,
+      "llm_calls": 1,
+      "prompt_tokens": 47,
+      "completion_tokens": 192,
+      "trace": []
+    },
+    {
+      "id": "q_003",
+      "sql": "SELECT COUNT(*) AS account_owner_count\nFROM disp\nWHERE type = 'OWNER';",
+      "answer": "account_owner_count = 4,500",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 8.86,
+      "llm_calls": 1,
+      "prompt_tokens": 39,
+      "completion_tokens": 425,
+      "trace": []
+    },
+    {
+      "id": "q_004",
+      "sql": "SELECT AVG(monthly_payment) AS average_monthly_payment\nFROM loans;",
+      "answer": "ERROR: no such table: loans",
+      "strict": false,
+      "lenient": false,
+      "latency_s": 7.336,
+      "llm_calls": 1,
+      "prompt_tokens": 39,
+      "completion_tokens": 404,
+      "trace": []
+    },
+    {
+      "id": "q_005",
+      "sql": "SELECT COUNT(*)\nFROM client AS c\nJOIN district AS d\n  ON c.district_id = d.district_id\nWHERE c.gender = 'F'\n  AND d.A11 > 10000;",
+      "answer": "COUNT(*) = 636",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 11.141,
+      "llm_calls": 1,
+      "prompt_tokens": 46,
+      "completion_tokens": 583,
+      "trace": []
+    },
+    {
+      "id": "q_006",
+      "sql": "SELECT COUNT(DISTINCT d.client_id) AS client_count\nFROM disp AS d\nJOIN account AS a\n  ON d.account_id = a.account_id\nJOIN district AS di\n  ON a.district_id = di.A1\nWHERE d.type = 'OWNER'\n  AND di.A3 = 'Prague';",
+      "answer": "ERROR: no such column: di.A1",
+      "strict": false,
+      "lenient": false,
+      "latency_s": 21.506,
+      "llm_calls": 1,
+      "prompt_tokens": 44,
+      "completion_tokens": 1294,
+      "trace": []
+    },
+    {
+      "id": "q_007",
+      "sql": "SELECT SUM(amount) AS total_transaction_amount\nFROM transactions\nWHERE account_id = 1\n  AND transaction_date >= DATE '1997-01-01'\n  AND transaction_date < DATE '1998-01-01';",
+      "answer": "ERROR: near \"'1997-01-01'\": syntax error",
+      "strict": false,
+      "lenient": false,
+      "latency_s": 5.221,
+      "llm_calls": 1,
+      "prompt_tokens": 42,
+      "completion_tokens": 185,
+      "trace": []
+    },
+    {
+      "id": "q_008",
+      "sql": "SELECT\n    d.district_name,\n    COUNT(DISTINCT p.client_id) AS owner_count\nFROM district AS d\nJOIN account AS a\n    ON a.district_id = d.district_id\nJOIN disp AS p\n    ON p.account_id = a.account_id\nWHERE d.region = 'south Moravia'\n  AND p.type = 'OWNER'\nGROUP BY\n    d.district_id,\n    d.district_name\nORDER BY owner_count DESC;",
+      "answer": "ERROR: no such column: d.district_name",
+      "strict": false,
+      "lenient": false,
+      "latency_s": 10.962,
+      "llm_calls": 1,
+      "prompt_tokens": 58,
+      "completion_tokens": 595,
+      "trace": []
+    },
+    {
+      "id": "q_009",
+      "sql": "SELECT\n    c.client_id,\n    c.gender,\n    SUM(l.amount) AS total_loan_amount\nFROM client AS c\nJOIN disp AS d\n    ON c.client_id = d.client_id\n   AND d.type = 'OWNER'\nJOIN account AS a\n    ON d.account_id = a.account_id\nJOIN loan AS l\n    ON a.account_id = l.account_id\nGROUP BY\n    c.client_id,\n    c.gender\nORDER BY\n    total_loan_amount DESC\nLIMIT 5;",
+      "answer": "5 rows: client_id=9,340, gender=M, total_loan_amount=590,820; client_id=10,997, gender=F, total_loan_amount=566,640; client_id=2,823, gender=F, total_loan_amount=541,200; client_id=981, gender=M, total_loan_amount=538,500; client_id=3,546, gender=M, total_loan_amount=504,000",
+      "strict": true,
+      "lenient": true,
+      "latency_s": 6.913,
+      "llm_calls": 1,
+      "prompt_tokens": 56,
+      "completion_tokens": 411,
+      "trace": []
+    },
+    {
+      "id": "q_010",
+      "sql": "SELECT COUNT(DISTINCT l.loan_id) AS running_good_standing_loans\nFROM loan AS l\nJOIN account AS a\n    ON a.account_id = l.account_id\nJOIN disp AS d\n    ON d.account_id = a.account_id\n   AND d.type = 'OWNER'\nJOIN client AS c\n    ON c.client_id = d.client_id\nJOIN district AS di\n    ON di.district_id = c.district_id\nWHERE l.status = 'C'                         -- running and in good standing\n  AND di.A3 = 'north Bohemia'\n  AND CAST(SUBSTRING(c.birth_number, 3, 2) AS INTEGER) <= 12;  -- male",
+      "answer": "ERROR: no such column: c.birth_number",
+      "strict": false,
+      "lenient": false,
+      "latency_s": 23.995,
+      "llm_calls": 1,
+      "prompt_tokens": 54,
+      "completion_tokens": 1194,
+      "trace": []
+    }
+  ]
+}
