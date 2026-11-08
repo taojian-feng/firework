@@ -20,6 +20,8 @@ class ToolContext:
     conn: sqlite3.Connection
     settings: Settings
     empty_result_warned: bool = False
+    # Last successful exploratory query, used if the model forgets to call submit_answer.
+    last_ok_result: QueryResult | None = None
 
 
 @dataclass
@@ -55,6 +57,8 @@ class Tool:
 
 def run_sql(ctx: ToolContext, sql: str) -> ToolOutput:
     result = execute_sql(ctx.conn, sql, ctx.settings.max_rows, ctx.settings.query_timeout_s)
+    if result.ok and result.rows:
+        ctx.last_ok_result = result
     return ToolOutput(result.preview(ctx.settings.preview_rows))
 
 
@@ -117,7 +121,7 @@ def build_tools() -> dict[str, Tool]:
             name="run_sql",
             description=(
                 "Run an exploratory read-only SQLite query and see up to 20 rows. Use it to check data "
-                "before answering; it is NOT shown to the user."
+                "before answering. It is NOT shown to the user: you must still call submit_answer at the end."
             ),
             parameters={
                 "type": "object",

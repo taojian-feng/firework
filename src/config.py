@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
-DEFAULT_MODEL = "accounts/fireworks/models/kimi-k2p6"
+DEFAULT_MODEL = "accounts/fireworks/models/kimi-k3"
 
 
 def _env_int(name: str, default: int) -> int:

@@ -28,7 +28,7 @@ uv run pytest                   # offline unit tests, no API key needed
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `FIREWORKS_API_KEY` | yes | | Fireworks API key |
-| `T2SQL_MODEL` | no | `accounts/fireworks/models/kimi-k2p6` | Model used by the agent |
+| `T2SQL_MODEL` | no | `accounts/fireworks/models/kimi-k3` | Model used by the agent |
 | `T2SQL_DB_PATH` | no | `data/financial.sqlite` | SQLite database |
 | `T2SQL_DESCRIPTION_DIR` | no | `data/database_description` | Column-doc CSVs (optional) |
 | `T2SQL_MAX_STEPS` | no | `6` | LLM calls allowed per question |
@@ -62,7 +62,7 @@ Commands: `/schema` (the context the model sees), `/trace` (LLM and tool steps b
 answer), `/reset` (new topic), `/help`, `exit` / `quit`.
 
 Other databases: `uv run cli --db path/to/any.sqlite` (column docs are optional, add
-`--descriptions dir/` if you have them). Other models: `uv run cli --model accounts/fireworks/models/gpt-oss-20b`.
+`--descriptions dir/` if you have them). Other models: `uv run cli --model accounts/fireworks/models/gpt-oss-120b`.
 
 ## How it works
 
@@ -150,7 +150,7 @@ matches.
 ```bash
 uv run eval                                   # agent -> dev_answers.json
 uv run eval --baseline                        # customer prompt, same model
-uv run eval --model accounts/fireworks/models/gpt-oss-20b --repeat 3   # model comparison
+uv run eval --model accounts/fireworks/models/gpt-oss-120b --repeat 3   # model comparison
 ```
 
 ### Results

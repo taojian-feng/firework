@@ -142,6 +142,13 @@ class SQLAgent:
                         break
                     messages.append({"role": "user", "content": output.content})
                     continue
+                if ctx.last_ok_result is not None:
+                    # The model explored with run_sql, got rows, then answered in prose instead of
+                    # calling submit_answer (seen with gpt-oss-120b). Use that query's result.
+                    out.result, out.sql = ctx.last_ok_result, ctx.last_ok_result.sql
+                    out.assumptions = text[:300]
+                    out.steps.append(Step("fallback", "used last successful run_sql result", 0.0))
+                    break
                 out.message = text or "The model returned an empty response."
                 break
 

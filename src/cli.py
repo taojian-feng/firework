@@ -2,7 +2,7 @@
 
     uv run cli                                  # sample banking database
     uv run cli --db path/to/other.sqlite        # any SQLite database (column docs are optional)
-    uv run cli --model accounts/fireworks/models/gpt-oss-20b
+    uv run cli --model accounts/fireworks/models/gpt-oss-120b
 """
 
 import argparse

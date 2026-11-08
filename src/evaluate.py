@@ -2,7 +2,7 @@
 
     uv run eval                       # agent, default model -> dev_answers.json + results/
     uv run eval --baseline            # the customer's original one-line prompt, same model
-    uv run eval --model accounts/fireworks/models/gpt-oss-20b --repeat 3
+    uv run eval --model accounts/fireworks/models/gpt-oss-120b --repeat 3
     uv run eval --price-in 0.6 --price-out 2.5   # $/1M tokens -> projected daily cost
 
 Scoring is execution-based (what BIRD calls EX): run the predicted SQL and compare its result

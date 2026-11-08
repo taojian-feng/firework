@@ -78,3 +78,16 @@ def test_follow_up_sees_previous_turn(conn):
     messages = client.requests[1]["messages"]
     assert messages[1]["content"] == "How many clients?"
     assert "SELECT COUNT(*) FROM client" in messages[2]["content"]
+
+
+def test_text_reply_after_run_sql_falls_back_to_that_result(conn):
+    agent, _ = make_agent(
+        conn,
+        [
+            llm_response(tool_calls=[tool_call("run_sql", sql="SELECT COUNT(*) AS n FROM card")]),
+            llm_response(content="There are 892 cards."),
+        ],
+    )
+    out = agent.ask("How many cards?")
+    assert out.ok and out.result.rows == [(892,)] and out.sql.startswith("SELECT COUNT(*)")
+    assert out.steps[-1].kind == "fallback"
