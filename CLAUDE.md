@@ -14,6 +14,7 @@ for the design; this file is the short version for working in the code.
 - src/schema.py – schema text for the prompt (introspection + doc CSVs + enum values).
 - src/db.py – the only place SQL is executed. Keep it read-only.
 - src/evaluate.py – execution-match scoring, latency/token stats, writes dev_answers.json and results/.
+- docs/ARCHITECTURE.md – diagrams; sources in docs/diagrams/*.mmd (update them when the loop changes).
 - src/utils.py – helpers that came with the assignment (unchanged).
 
 ## Conventions

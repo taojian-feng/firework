@@ -66,6 +66,12 @@ Other databases: `uv run cli --db path/to/any.sqlite` (column docs are optional,
 
 ## How it works
 
+Detailed diagrams (control flow and a step-by-step sequence) are in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+
+Short version:
+
 ```
 question ──► SQLAgent.ask()  (src/agent.py)
                │  system prompt = rules + grounded schema (src/schema.py), built once per session

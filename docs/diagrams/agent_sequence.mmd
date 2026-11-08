@@ -1,0 +1,44 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant CLI as cli.py
+    participant Agent as agent.SQLAgent
+    participant LLM as Fireworks LLM
+    participant Tools as tools.py
+    participant DB as db.execute_sql (read-only)
+
+    Note over Agent: Startup: schema.py introspects the DB once,<br/>adds column docs and enum values to the system prompt
+
+    User->>CLI: How many running loans in good standing<br/>belong to male owners in north Bohemia?
+    CLI->>Agent: ask(question)
+    Agent->>LLM: system prompt (schema) + history + question + tool specs
+    Note over LLM: Fast path: confident, so it submits right away
+    LLM-->>Agent: submit_answer(sql, assumptions="good standing = status 'C'")
+    Agent->>Tools: call_tool("submit_answer", args)
+    Tools->>DB: execute_sql(sql)
+    DB-->>Tools: QueryResult(rows=[(18,)])
+    Tools-->>Agent: ToolOutput(final_result)
+    Agent-->>CLI: AgentResult (1 LLM call)
+    CLI-->>User: SQL panel, assumption, table: 18
+
+    User->>CLI: now only female owners
+    CLI->>Agent: ask(follow-up)
+    Agent->>LLM: system prompt + previous Q/SQL/result + follow-up
+    LLM-->>Agent: submit_answer(sql with a typo: c.sex = 'F')
+    Agent->>Tools: call_tool("submit_answer")
+    Tools->>DB: execute_sql
+    DB-->>Tools: error: no such column c.sex
+    Tools-->>Agent: "Your query failed, fix it..."
+    Note over Agent,LLM: Self-repair (illustrative typo): the error goes back as a tool result
+    Agent->>LLM: messages + tool error
+    LLM-->>Agent: get_column_values(client, gender)
+    Agent->>Tools: call_tool("get_column_values")
+    Tools->>DB: SELECT gender, COUNT(*) ... GROUP BY gender
+    DB-->>Agent: F | 2645, M | 2724
+    Agent->>LLM: messages + values
+    LLM-->>Agent: submit_answer(sql with c.gender = 'F')
+    Agent->>Tools: call_tool("submit_answer")
+    Tools->>DB: execute_sql
+    DB-->>Agent: rows
+    Agent-->>CLI: AgentResult (3 LLM calls)
+    CLI-->>User: corrected SQL, table: 22

@@ -1,0 +1,66 @@
+flowchart TD
+    subgraph START["Session start · once"]
+        direction LR
+        DB[("SQLite DB<br/>opened read-only<br/>db.connect_readonly")]
+        CSV["Column-doc CSVs<br/>optional"]
+        INTRO["schema.build_schema_context<br/>tables · types · PK/FK<br/>column docs · ALL VALUES of enum columns"]
+        SYS["System prompt<br/>prompts.SYSTEM_PROMPT + schema<br/>~3k tokens, identical every call → cacheable"]
+        DB --> INTRO
+        CSV --> INTRO
+        INTRO --> SYS
+    end
+
+    U(["User types a question<br/>cli.main"]) --> CMD{"/schema · /trace<br/>/reset · exit?"}
+    CMD -- "yes" --> CMDH["Handled locally<br/>no LLM call"]
+    CMD -- "no" --> MSG["Build messages<br/>system prompt + last 5 Q/SQL/result pairs + question<br/>agent.SQLAgent.ask"]
+    SYS -.-> MSG
+
+    MSG --> BUDGET{"Last step?<br/>step = max_steps − 1"}
+    BUDGET -- "yes" --> NUDGE["Append nudge:<br/>call submit_answer now"] --> LLM
+    BUDGET -- "no" --> LLM["LLM call on Fireworks<br/>OpenAI-compatible API<br/>tools = submit_answer, run_sql, get_column_values"]
+
+    LLM -- "API error" --> FAIL["Show error message"]
+    LLM --> TC{"Tool calls<br/>in the reply?"}
+
+    TC -- "run_sql" --> RS["tools.run_sql<br/>exploratory query, rows go back to the model<br/>remembers last successful result"]
+    TC -- "get_column_values" --> GV["tools.get_column_values<br/>distinct values + counts"]
+    TC -- "submit_answer" --> SUB["tools.submit_answer<br/>runs the final query"]
+
+    RS --> EXEC
+    GV --> EXEC
+    SUB --> EXEC
+    EXEC["db.execute_sql<br/>1 statement · SELECT/WITH only<br/>mode=ro + query_only<br/>1,000-row cap · 10 s timeout<br/>errors returned as values"]
+
+    EXEC --> OUTRS{"Which tool?"}
+    OUTRS -- "run_sql / get_column_values" --> BACK["Tool result appended<br/>to messages"]
+    OUTRS -- "submit_answer" --> CHK{"Result?"}
+    CHK -- "SQL error" --> REPAIR["Error text back to the model:<br/>fix and resubmit"] --> BACK
+    CHK -- "0 rows, first time" --> EMPTY["Ask the model to double-check<br/>filter values, then resubmit"] --> BACK
+    CHK -- "rows, or 0 rows again" --> DONE
+
+    BACK --> MORE{"Steps left?"}
+    MORE -- "yes" --> BUDGET
+    MORE -- "no" --> STOP["Stopped after max_steps"]
+
+    TC -- "no tools: plain text" --> TXT{"SQL in a<br/>code block?"}
+    TXT -- "yes" --> SUB
+    TXT -- "no" --> FB{"run_sql already<br/>returned rows?"}
+    FB -- "yes · fallback" --> DONE
+    FB -- "no" --> CLAR["Clarifying question<br/>or 'not in this data'"]
+
+    DONE(["AgentResult<br/>SQL · rows · assumptions<br/>latency · LLM calls · tokens"])
+    DONE --> RENDER["cli.render<br/>SQL panel · assumption · results table · timing"]
+    CLAR --> RENDER
+    STOP --> RENDER
+    FAIL --> RENDER
+    RENDER --> HIST["Save Q + SQL + 5-row preview<br/>to history for follow-ups<br/>agent._remember"]
+    HIST --> NEXT(["Wait for the next question"])
+
+    classDef llm fill:#ede7f6,stroke:#5e35b1,color:#1a1a1a
+    classDef tool fill:#e3f2fd,stroke:#1e88e5,color:#1a1a1a
+    classDef safe fill:#e8f5e9,stroke:#43a047,color:#1a1a1a
+    classDef stop fill:#fff3e0,stroke:#fb8c00,color:#1a1a1a
+    class LLM,NUDGE llm
+    class RS,GV,SUB tool
+    class EXEC,DB safe
+    class DONE,CLAR,STOP,FAIL stop
