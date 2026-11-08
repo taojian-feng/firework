@@ -1,4 +1,4 @@
-<!-- DRAFT. Numbers marked [[...]] get filled in from results/ after the eval run. -->
+<!-- Draft for Taojian to review before sending. Numbers come from results/ (2026-11-08 runs). -->
 
 **To:** Raul Jimenez <raul.j@gitlab.com>
 **From:** Taojian, Fireworks AI
@@ -32,17 +32,23 @@ It works against any SQLite file with no setup. Column docs help but are optiona
 We scored by executing the generated SQL and comparing result sets with your gold answers, so any
 correct query counts, however it's written.
 
-| | Your prompt (same model) | Our agent |
-|---|---|---|
-| Correct results | [[x]]/10 | [[y]]/10 |
-| SQL executes | [[x]]/10 | [[y]]/10 |
-| End-to-end latency P50 / P95 | [[a]]s / [[b]]s | [[c]]s / [[d]]s |
-| Tokens per query (in / out) | [[ ]] | [[ ]] |
-| Est. cost per day at 30k queries | [[$ ]] | [[$ ]] |
+| | Your prompt (Kimi K3) | Our agent (Kimi K3) | Our agent (gpt-oss-120b) |
+|---|---|---|---|
+| Correct results | 5/10 | 10/10 (30/30 over 3 runs) | 10/10 (30/30 over 3 runs) |
+| SQL executes | 5/10 | 10/10 | 10/10 |
+| End-to-end latency P50 / P95 | 8.9s / 24.0s | 4.8s / 19.3s | **1.6s / 4.0s** |
+| Est. cost per day at 30k queries | ~$270 | ~$444 | **~$25** |
 
-Model: [[kimi-k2p6]] on Fireworks serverless. [[One or two sentences on what still fails and why,
-from results/.]] Most of the latency is the single model call. In the common case the agent answers
-in one LLM round trip, so the [[c]]s P50 is within your 3-second target.
+Costs use Fireworks serverless list prices, without prompt caching. The five baseline failures were
+the problems you described: invented tables and columns (`loans`, `district_name`,
+`birth_number`) and non-SQLite syntax. With the schema grounding, none of them happen.
+
+Our recommendation is **gpt-oss-120b**. On this set it matches the larger model's accuracy, beats
+your 3-second P50 target (1.6s), and costs about $25 a day for the first cohort, roughly 17x less
+than Kimi K3. One thing we'd still harden: in 6 of 30 answers it found the right result with an
+exploratory query and then didn't formally submit it. Our agent catches that today, but we'd add
+tests for it before you ship. Kimi K3 stays useful as a quality reference. With reasoning turned
+down it reaches 2.6s P50 at the same accuracy.
 
 **How we validated it**
 
@@ -63,8 +69,8 @@ together is build a larger eval set from your users' real questions.
    embeddings so wide schemas with hundreds of tables still fit in a small prompt.
 3. *Latency and cost at scale:* load test at your projected peak, compare 2 to 3 open models
    on the quality-latency-cost curve, and decide between serverless and a dedicated on-demand
-   deployment based on measured traffic. Dedicated capacity usually makes sense once volume is
-   steady, and gives predictable latency.
+   deployment based on measured traffic. The serverless P95 had occasional slow outliers. Dedicated
+   capacity gives predictable tail latency, and usually becomes cheaper once volume is steady.
 
 **Post-training (fine-tuning)**
 

@@ -53,7 +53,7 @@ ask> How many female clients live in districts where the average salary is great
 ┡━━━━━━━━━━━━━━━━┩
 │ 636            │
 └────────────────┘
-1.4s total (1.3s model, 1 call(s)) · 2,950 in / 85 out tokens
+1.6s total (1.5s model, 1 call(s)) · 3,050 in / 120 out tokens
 ask> now only in Prague
 ...
 ```
@@ -156,12 +156,42 @@ uv run eval --model accounts/fireworks/models/gpt-oss-120b --repeat 3   # model 
 ### Results
 
 <!-- RESULTS:START -->
-_To be filled in from `results/` after the eval run._
+Measured on 2026-11-08 on Fireworks serverless. Agent runs repeat each question 3 times (30 answers);
+the baseline ran once. Raw per-question SQL, answers and traces are in [results/](results/).
+Cost uses Fireworks list prices per 1M tokens (Kimi K3 $3 in / $15 out, gpt-oss-120b $0.15 /
+$0.60), uncached. Prompt caching of the fixed schema prefix would lower the input share.
+
+| Setup | Correct | SQL executes | P50 | P95 | LLM calls | Tokens in / out | $ / query | $ / day at 30k |
+|---|---|---|---|---|---|---|---|---|
+| Customer prompt, kimi-k3 (baseline) | 5/10 | 5/10 | 8.9s | 24.0s | 1.0 | 46 / 590 | 0.0090 | 270 |
+| Agent, kimi-k3 | 30/30 | 30/30 | 4.8s | 19.3s | 1.03 | 3,108 / 366 | 0.0148 | 444 |
+| Agent, kimi-k3, `reasoning_effort=low` | 30/30 | 30/30 | 2.6s | 9.9s | 1.0 | 3,057 / 122 | 0.0110 | 330 |
+| **Agent, gpt-oss-120b** | **30/30** | **30/30** | **1.6s** | **4.0s** | 1.5 | 4,519 / 281 | **0.00085** | **25** |
+
+What the numbers say:
+
+* **Grounding fixes the quality problem.** The baseline failed exactly the way the customer
+  described: `FROM loans`, `district_name`, `transaction_date`, `birth_number`, and ANSI `DATE '1997-01-01'`
+  syntax that SQLite rejects. All five failures were invented names or wrong dialect, and none
+  of them survive once the model sees the real schema.
+* **gpt-oss-120b meets the latency and cost targets** at the same dev-set accuracy: 1.6s P50, about
+  17x cheaper than Kimi K3. It needed the fallback in 6 of 30 answers: it ran the correct query
+  with `run_sql` and then answered in prose instead of calling `submit_answer`. Before that fallback
+  (commit 6fcce86) it scored 8/10.
+* **Kimi K3 is accurate but too slow by default.** With reasoning on it's 4.8s P50 and has long-tail outliers
+  (one call took 40s). `reasoning_effort=low` halves latency and output tokens at no accuracy cost here.
+* `dev_answers.json` comes from a single kimi-k3 run (10/10, the CLI default).
+
+Scorer note: the first low-effort run scored 27/30 because q_008 has two districts tied at 53 owners, and
+SQLite returned them in the other order. Tie order is undefined in SQL, so the scorer now
+requires only the sort column to match in sequence. All saved runs were re-scored with
+`uv run eval --rescore results/*.json`, which makes no LLM calls.
 <!-- RESULTS:END -->
 
 ### Known limitations
 
-* 10 dev questions is too few to claim an accuracy number. It is a smoke test. The next step is a
+* 10 dev questions is too few to claim an accuracy number, and 30/30 on all three agent setups means
+  this set no longer separates the models. It is a smoke test. The next step is a
   customer-specific eval set of 100+ questions (see EMAIL.md).
 * SQLite only. Other databases need a SQLAlchemy connection layer plus a read-only DB role, and
   dialect hints in the prompt.

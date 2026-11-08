@@ -1,7 +1,7 @@
 import json
 
 from src.db import execute_sql
-from src.evaluate import QUESTIONS_PATH, extract_sql, gold_rows, is_ordered, results_match
+from src.evaluate import QUESTIONS_PATH, extract_sql, gold_rows, is_ordered, results_match, sort_column
 
 
 def test_float_rounding_and_unordered_match():
@@ -27,3 +27,17 @@ def test_gold_sql_matches_expected_results(conn):
     for question in json.loads(QUESTIONS_PATH.read_text()):
         result = execute_sql(conn, question["gold_sql"])
         assert results_match(result.rows, gold_rows(question), is_ordered(question["gold_sql"])), question["id"]
+
+
+def test_ties_on_sort_key_may_swap():
+    gold = [("Brno", 128), ("Brno - venkov", 53), ("Zdar", 53)]
+    swapped = [("Brno", 128), ("Zdar", 53), ("Brno - venkov", 53)]
+    wrong = [("Brno - venkov", 53), ("Brno", 128), ("Zdar", 53)]
+    assert results_match(swapped, gold, ordered=True, sort_col=1)
+    assert not results_match(wrong, gold, ordered=True, sort_col=1)
+    assert not results_match(swapped, gold, ordered=True)  # without a sort key: exact order
+
+
+def test_sort_column_from_gold_sql():
+    question = json.loads(QUESTIONS_PATH.read_text())[7]  # q_008, ORDER BY owner_count DESC
+    assert sort_column(question) == 1

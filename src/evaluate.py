@@ -3,11 +3,13 @@
     uv run eval                       # agent, default model -> dev_answers.json + results/
     uv run eval --baseline            # the customer's original one-line prompt, same model
     uv run eval --model accounts/fireworks/models/gpt-oss-120b --repeat 3
-    uv run eval --price-in 0.6 --price-out 2.5   # $/1M tokens -> projected daily cost
+    uv run eval --price-in 0.15 --price-out 0.6   # $/1M tokens -> projected daily cost
+    uv run eval --rescore results/*.json          # re-score saved runs after a scorer change
 
 Scoring is execution-based (what BIRD calls EX): run the predicted SQL and compare its result
 set with the gold result. Comparing results instead of SQL text accepts any correct query.
-  * strict:  same rows and same number of columns (row order matters only if gold has ORDER BY)
+  * strict:  same rows and same number of columns. If gold has ORDER BY, the sort column must come
+             out in the same sequence, but rows tied on the sort key may be in any order.
   * lenient: the gold columns can be found inside the predicted result (extra columns allowed,
              e.g. the model also returned district_id). Reported to show *how* things fail.
 """
@@ -54,28 +56,38 @@ def _norm(value: Any) -> Any:
     return value
 
 
-def _rows_equal(pred: list[tuple], gold: list[tuple], ordered: bool) -> bool:
+def _rows_equal(pred: list[tuple], gold: list[tuple], ordered: bool, sort_col: int | None = None) -> bool:
     pred_n = [tuple(_norm(v) for v in row) for row in pred]
     gold_n = [tuple(_norm(v) for v in row) for row in gold]
-    return pred_n == gold_n if ordered else Counter(pred_n) == Counter(gold_n)
+    if not ordered:
+        return Counter(pred_n) == Counter(gold_n)
+    if sort_col is None:
+        return pred_n == gold_n
+    # Same rows, and the sort column comes out in the same sequence. Rows that tie on the sort
+    # key may appear in any order (SQL leaves tie order undefined).
+    return Counter(pred_n) == Counter(gold_n) and [r[sort_col] for r in pred_n] == [r[sort_col] for r in gold_n]
 
 
 def results_match(
-    pred_rows: list[tuple], gold_rows: list[tuple], ordered: bool, lenient: bool = False
+    pred_rows: list[tuple],
+    gold_rows: list[tuple],
+    ordered: bool,
+    lenient: bool = False,
+    sort_col: int | None = None,
 ) -> bool:
     if len(pred_rows) != len(gold_rows):
         return False
     if not gold_rows:
         return True
     gold_width, pred_width = len(gold_rows[0]), len(pred_rows[0])
-    if pred_width == gold_width and _rows_equal(pred_rows, gold_rows, ordered):
+    if pred_width == gold_width and _rows_equal(pred_rows, gold_rows, ordered, sort_col):
         return True
     if not lenient or pred_width < gold_width or pred_width > 8:
         return False
     # Try every way of picking gold_width columns out of the prediction (tiny for real queries).
     for cols in itertools.permutations(range(pred_width), gold_width):
         projected = [tuple(row[i] for i in cols) for row in pred_rows]
-        if _rows_equal(projected, gold_rows, ordered):
+        if _rows_equal(projected, gold_rows, ordered, sort_col):
             return True
     return False
 
@@ -86,6 +98,16 @@ def gold_rows(question: dict) -> list[tuple]:
 
 def is_ordered(sql: str) -> bool:
     return re.search(r"\border\s+by\b", sql, re.IGNORECASE) is not None
+
+
+def sort_column(question: dict) -> int | None:
+    """Index of the gold result column named first in ORDER BY (e.g. owner_count), if any."""
+    match = re.search(r"\border\s+by\s+([\w.\"]+)", question["gold_sql"], re.IGNORECASE)
+    if not match or not question["expected_result"]:
+        return None
+    name = match.group(1).split(".")[-1].strip('"')
+    columns = list(question["expected_result"][0].keys())
+    return columns.index(name) if name in columns else None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -166,10 +188,10 @@ def run_baseline(client: OpenAI, settings: Settings, conn, question: dict) -> Pr
 def score(pred: Prediction, question: dict) -> None:
     if pred.result is None or not pred.result.ok:
         return
-    ordered = is_ordered(question["gold_sql"])
+    ordered, sort_col = is_ordered(question["gold_sql"]), sort_column(question)
     gold = gold_rows(question)
-    pred.strict = results_match(pred.result.rows, gold, ordered)
-    pred.lenient = pred.strict or results_match(pred.result.rows, gold, ordered, lenient=True)
+    pred.strict = results_match(pred.result.rows, gold, ordered, sort_col=sort_col)
+    pred.lenient = pred.strict or results_match(pred.result.rows, gold, ordered, lenient=True, sort_col=sort_col)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -225,6 +247,25 @@ def print_report(preds: list[Prediction], summary: dict[str, Any]) -> None:
     console.print_json(data=summary)
 
 
+def rescore(path: Path, settings: Settings) -> None:
+    """Re-execute the SQL saved in a results file and score it again (no LLM calls).
+    Use after changing the scorer, so old runs stay comparable."""
+    report = json.loads(path.read_text())
+    questions = {q["id"]: q for q in json.loads(QUESTIONS_PATH.read_text())}
+    conn = connect_readonly(settings.db_path)
+    for saved in report["predictions"]:
+        pred = Prediction(saved["id"], saved["sql"], None, saved["answer"], 0, 0, 0, 0)
+        if saved["sql"]:
+            pred.result = execute_sql(conn, saved["sql"], settings.max_rows, settings.query_timeout_s)
+        score(pred, questions[saved["id"]])
+        saved["strict"], saved["lenient"] = pred.strict, pred.lenient
+    n = len(report["predictions"])
+    report["summary"]["accuracy_strict"] = sum(p["strict"] for p in report["predictions"]) / n
+    report["summary"]["accuracy_lenient"] = sum(p["lenient"] for p in report["predictions"]) / n
+    path.write_text(json.dumps(report, indent=2))
+    console.print(f"{path}: strict {report['summary']['accuracy_strict']:.0%}, lenient {report['summary']['accuracy_lenient']:.0%}")
+
+
 def main(argv: list[str] | None = None) -> None:
     settings = Settings()
     parser = argparse.ArgumentParser(description="Evaluate on the dev questions.")
@@ -235,7 +276,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--price-in", type=float, help="$ per 1M input tokens")
     parser.add_argument("--price-out", type=float, help="$ per 1M output tokens")
     parser.add_argument("--answers-out", default="dev_answers.json")
+    parser.add_argument("--rescore", nargs="+", type=Path, help="re-score saved results files, no LLM calls")
     args = parser.parse_args(argv)
+    if args.rescore:
+        for path in args.rescore:
+            rescore(path, settings)
+        return
     settings.model = args.model
 
     questions = json.loads(QUESTIONS_PATH.read_text())
