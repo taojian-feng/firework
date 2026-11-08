@@ -96,7 +96,7 @@ question ──► SQLAgent.ask()  (src/agent.py)
 | [src/db.py](src/db.py) | Read-only connection, SQL guard, row cap, timeout |
 | [src/prompts.py](src/prompts.py) | System prompt and the customer's baseline prompt |
 | [src/evaluate.py](src/evaluate.py) | Eval harness: execution accuracy, latency P50/P95, tokens, cost |
-| [tests/](tests/) | Offline tests with a scripted fake LLM client |
+| [tests/](tests/) | Offline tests. `FakeClient` in [tests/conftest.py](tests/conftest.py) stands in for the Fireworks API and returns pre-written model replies, so tests run without a key or network |
 
 ### Design decisions
 
@@ -207,8 +207,7 @@ requires only the sort column to match in sequence. All saved runs were re-score
 ## How I used AI tools
 
 I used **Claude Code** (Anthropic's coding agent) as a pair programmer for this take-home: reading
-the assignment, exploring the database, scaffolding the modules, writing the unit tests and the fake
-LLM client, and drafting the README and email. I reviewed and edited all of it, I made the design
+the assignment, exploring the database, scaffolding the modules, writing the unit tests, and drafting the README and email. I reviewed and edited all of it, I made the design
 calls (schema grounding with real values, one-call fast path, execution-based scoring), and I can
 walk through every file. [CLAUDE.md](CLAUDE.md) holds the project notes Claude Code reads, which
 also makes it quick to extend live.
