@@ -1,0 +1,352 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index b4417f7..fa7ebf3 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -15,6 +15,7 @@ dependencies = [
+ [project.scripts]
+ cli = "src.cli:main"
+ eval = "src.evaluate:main"
++loadtest = "src.loadtest:main"
+ 
+ [build-system]
+ requires = ["hatchling"]
+diff --git a/src/agent.py b/src/agent.py
+index 043ccf5..69fa94a 100644
+--- a/src/agent.py
++++ b/src/agent.py
+@@ -26,7 +26,7 @@ from openai import OpenAI
+ from src.config import Settings
+ from src.db import QueryResult, connect_readonly
+ from src.prompts import FINAL_STEP_NUDGE, SYSTEM_PROMPT, TEXT_REPLY_NUDGE
+-from src.schema import build_schema_context
++from src.schema import build_schema_context, introspect
+ from src.tools import Tool, ToolContext, build_tools, call_tool
+ 
+ 
+@@ -52,6 +52,7 @@ class AgentResult:
+     completion_tokens: int = 0
+     latency_s: float = 0.0
+     llm_s: float = 0.0
++    model: str = ""
+ 
+     @property
+     def ok(self) -> bool:
+@@ -105,7 +106,13 @@ class SQLAgent:
+         )
+         self.tools = tools or build_tools()
+         # Built once per session. A stable system prompt also lets the server reuse its prompt cache.
+-        self.schema_text = build_schema_context(self.conn, self.settings.description_dir)
++        if self.settings.schema_mode == "names":
++            self.schema_text = "\n".join(
++                f"TABLE {t.name}  -- {t.row_count:,} rows (call get_table_schema for columns)"
++                for t in introspect(self.conn, self.settings.description_dir)
++            )
++        else:
++            self.schema_text = build_schema_context(self.conn, self.settings.description_dir)
+         self.system_prompt = SYSTEM_PROMPT.format(schema=self.schema_text)
+         self.history: list[dict[str, Any]] = []  # compact Q/A pairs for follow-up questions
+ 
+@@ -117,6 +124,19 @@ class SQLAgent:
+     def ask(self, question: str) -> AgentResult:
+         out = AgentResult(question=question)
+         start = time.perf_counter()
++        self._run(question, self.settings.model, out)
++        if not out.ok and self.settings.fallback_model:
++            # Router: the cheap model failed, so try the stronger one once. Counts accumulate.
++            out.message = ""
++            out.steps.append(Step("escalate", f"retry with {self.settings.fallback_model}", 0.0))
++            self._run(question, self.settings.fallback_model, out)
++        out.latency_s = time.perf_counter() - start
++        self._remember(out)
++        return out
++
++    def _run(self, question: str, model: str, out: AgentResult) -> None:
++        out.model = model
++        start = time.perf_counter()
+         ctx = ToolContext(conn=self.conn, settings=self.settings)
+         messages: list[dict[str, Any]] = [
+             {"role": "system", "content": self.system_prompt},
+@@ -126,9 +146,12 @@ class SQLAgent:
+ 
+         text_nudged = False
+         for step in range(self.settings.max_steps):
++            if step > 0 and time.perf_counter() - start > self.settings.max_seconds:
++                out.message = f"Stopped: time budget of {self.settings.max_seconds:g}s used up."
++                break
+             if step == self.settings.max_steps - 1:
+                 messages.append({"role": "user", "content": FINAL_STEP_NUDGE})
+-            message = self._call_llm(messages, out)
++            message = self._call_llm(messages, out, model)
+             if message is None:
+                 break
+ 
+@@ -178,15 +201,11 @@ class SQLAgent:
+         else:
+             out.message = f"Stopped after {self.settings.max_steps} steps without a final answer."
+ 
+-        out.latency_s = time.perf_counter() - start
+-        self._remember(out)
+-        return out
+-
+     # -- helpers ---------------------------------------------------------------------------------
+ 
+-    def _call_llm(self, messages: list[dict[str, Any]], out: AgentResult):
++    def _call_llm(self, messages: list[dict[str, Any]], out: AgentResult, model: str):
+         kwargs: dict[str, Any] = dict(
+-            model=self.settings.model,
++            model=model,
+             messages=messages,
+             tools=[tool.spec() for tool in self.tools.values()],
+             tool_choice="auto",
+diff --git a/src/config.py b/src/config.py
+index 9244a0c..041216a 100644
+--- a/src/config.py
++++ b/src/config.py
+@@ -41,3 +41,14 @@ class Settings:
+     max_tokens: int = field(default_factory=lambda: _env_int("T2SQL_MAX_TOKENS", 2048))
+     # Optional: "low" / "medium" / "high" for reasoning models that accept it (e.g. gpt-oss).
+     reasoning_effort: str | None = field(default_factory=lambda: os.getenv("T2SQL_REASONING_EFFORT") or None)
++    # "full": whole schema in the prompt. "names": table names only, details via get_table_schema.
++    schema_mode: str = field(default_factory=lambda: os.getenv("T2SQL_SCHEMA_MODE", "full"))
++    # Verified question -> SQL pairs for find_similar_queries.
++    examples_path: str = field(
++        default_factory=lambda: os.getenv("T2SQL_EXAMPLES_PATH", "data/verified_queries.json")
++    )
++    # Extra stop conditions per question.
++    max_seconds: float = field(default_factory=lambda: float(os.getenv("T2SQL_MAX_SECONDS", "30")))
++    max_calls_per_tool: int = field(default_factory=lambda: _env_int("T2SQL_MAX_CALLS_PER_TOOL", 4))
++    # Escalate to this model when the main model fails to produce a result.
++    fallback_model: str | None = field(default_factory=lambda: os.getenv("T2SQL_FALLBACK_MODEL") or None)
+diff --git a/src/loadtest.py b/src/loadtest.py
+new file mode 100644
+index 0000000..c46cd2a
+--- /dev/null
++++ b/src/loadtest.py
+@@ -0,0 +1,97 @@
++"""Load test: N concurrent users asking dev questions for a fixed time (closed loop).
++
++    uv run loadtest --concurrency 1,4,8 --duration 60 --model accounts/fireworks/models/gpt-oss-120b
++
++Each worker owns its own SQLAgent (and so its own SQLite connection and history). The report per
++concurrency level is what Raul's 30k queries/day target needs: throughput, P50/P95 latency,
++error rate, and LLM calls / tokens per question (the cost drivers).
++"""
++
++import argparse
++import json
++import random
++import threading
++import time
++from concurrent.futures import ThreadPoolExecutor
++from pathlib import Path
++from typing import Callable
++
++from src.agent import SQLAgent
++from src.config import Settings
++from src.evaluate import percentile
++
++
++def _worker(make_agent: Callable[[], SQLAgent], questions: list[dict], stop_at: float, rows: list, lock) -> None:
++    agent = make_agent()
++    while time.perf_counter() < stop_at:
++        question = random.choice(questions)
++        agent.reset()
++        t0 = time.perf_counter()
++        out = agent.ask(question["question"])
++        row = dict(
++            latency_s=time.perf_counter() - t0,
++            ok=out.ok,
++            llm_calls=out.llm_calls,
++            tokens=out.prompt_tokens + out.completion_tokens,
++            error="" if out.ok else out.message[:120],
++        )
++        with lock:
++            rows.append(row)
++
++
++def run_load(make_agent: Callable[[], SQLAgent], questions: list[dict], concurrency: int, duration_s: float) -> dict:
++    rows: list[dict] = []
++    lock = threading.Lock()
++    start = time.perf_counter()
++    stop_at = start + duration_s
++    with ThreadPoolExecutor(max_workers=concurrency) as pool:
++        for _ in range(concurrency):
++            pool.submit(_worker, make_agent, questions, stop_at, rows, lock)
++    elapsed = time.perf_counter() - start  # includes the tail of in-flight requests
++    latencies = [r["latency_s"] for r in rows]
++    n = len(rows) or 1
++    return dict(
++        concurrency=concurrency,
++        requests=len(rows),
++        qps=round(len(rows) / elapsed, 2),
++        p50_s=round(percentile(latencies, 50), 2) if rows else 0.0,
++        p95_s=round(percentile(latencies, 95), 2) if rows else 0.0,
++        error_rate=round(sum(not r["ok"] for r in rows) / n, 3),
++        avg_llm_calls=round(sum(r["llm_calls"] for r in rows) / n, 2),
++        avg_tokens=round(sum(r["tokens"] for r in rows) / n),
++        errors=sorted({r["error"] for r in rows if r["error"]})[:5],
++    )
++
++
++def main(argv: list[str] | None = None) -> None:
++    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
++    parser.add_argument("--concurrency", default="1,4,8", help="comma-separated levels")
++    parser.add_argument("--duration", type=float, default=60.0, help="seconds per level")
++    parser.add_argument("--model", default=None)
++    parser.add_argument("--questions", default="data/dev_questions.json")
++    args = parser.parse_args(argv)
++
++    settings = Settings()
++    if args.model:
++        settings.model = args.model
++    questions = json.loads(Path(args.questions).read_text())
++    reports = []
++    print(f"model={settings.model}")
++    print(f"{'users':>5} {'reqs':>5} {'qps':>6} {'p50_s':>6} {'p95_s':>6} {'err%':>5} {'calls':>5} {'tokens':>7}")
++    for level in [int(x) for x in args.concurrency.split(",")]:
++        r = run_load(lambda: SQLAgent(settings), questions, level, args.duration)
++        reports.append(r)
++        print(
++            f"{r['concurrency']:>5} {r['requests']:>5} {r['qps']:>6} {r['p50_s']:>6} {r['p95_s']:>6} "
++            f"{100 * r['error_rate']:>5.1f} {r['avg_llm_calls']:>5} {r['avg_tokens']:>7}"
++        )
++        for e in r["errors"]:
++            print(f"      error: {e}")
++    out = Path("results") / f"load_{settings.model.rsplit('/', 1)[-1]}.json"
++    out.parent.mkdir(exist_ok=True)
++    out.write_text(json.dumps(dict(model=settings.model, levels=reports), indent=2))
++    print(f"saved {out}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/src/tools.py b/src/tools.py
+index a8e8b98..2866a3b 100644
+--- a/src/tools.py
++++ b/src/tools.py
+@@ -10,12 +10,16 @@ submit_answer does when the query fails, and the loop continues so the model can
+ """
+ 
+ import json
++import re
+ import sqlite3
+-from dataclasses import dataclass
++from collections import Counter
++from dataclasses import dataclass, field
++from pathlib import Path
+ from typing import Any, Callable
+ 
+ from src.config import Settings
+ from src.db import QueryResult, execute_sql
++from src.schema import introspect, load_descriptions, render_schema
+ 
+ 
+ @dataclass
+@@ -27,6 +31,7 @@ class ToolContext:
+     empty_result_warned: bool = False
+     # Last successful exploratory query, used if the model forgets to call submit_answer.
+     last_ok_result: QueryResult | None = None
++    calls: Counter = field(default_factory=Counter)  # tool name -> calls this question
+ 
+ 
+ @dataclass
+@@ -100,6 +105,47 @@ def submit_answer(ctx: ToolContext, sql: str, assumptions: str = "") -> ToolOutp
+     return ToolOutput(result.preview(ctx.settings.preview_rows), final_result=result, assumptions=assumptions)
+ 
+ 
++def ask_user(ctx: ToolContext, question: str) -> ToolOutput:
++    """End the turn with a clarifying question instead of guessing."""
++    return ToolOutput("Question shown to the user.", final_message=question)
++
++
++def get_table_schema(ctx: ToolContext, table: str) -> ToolOutput:
++    tables = introspect(ctx.conn, ctx.settings.description_dir)
++    match = [t for t in tables if t.name.lower() == table.strip().strip('"').lower()]
++    if not match:
++        return ToolOutput(f"No table '{table}'. Tables: {', '.join(t.name for t in tables)}.")
++    return ToolOutput(render_schema(match))
++
++
++def _words(text: str) -> set[str]:
++    return set(re.findall(r"[a-z0-9]+", text.lower()))
++
++
++def find_similar_queries(ctx: ToolContext, question: str) -> ToolOutput:
++    path = Path(ctx.settings.examples_path)
++    if not path.exists():
++        return ToolOutput("No verified queries available. Write the SQL yourself.")
++    pairs = json.loads(path.read_text())
++    words = _words(question)
++    scored = sorted(pairs, key=lambda p: len(words & _words(p["question"])), reverse=True)[:3]
++    lines = [f"Q: {p['question']}\nSQL: {p['sql']}" for p in scored if words & _words(p["question"])]
++    if not lines:
++        return ToolOutput("No similar verified queries. Write the SQL yourself.")
++    return ToolOutput("Verified queries, most similar first (adapt, don't copy blindly):\n\n" + "\n\n".join(lines))
++
++
++def search_glossary(ctx: ToolContext, term: str) -> ToolOutput:
++    needle = term.lower().strip()
++    hits = [
++        f"{table}.{column}: {doc}"
++        for table, columns in load_descriptions(ctx.settings.description_dir).items()
++        for column, doc in columns.items()
++        if needle and (needle in column.lower() or needle in doc.lower())
++    ]
++    return ToolOutput("\n".join(hits[:20]) if hits else f"No documentation mentions '{term}'.")
++
++
+ # ---------------------------------------------------------------------------------------------
+ # Registry
+ # ---------------------------------------------------------------------------------------------
+@@ -154,6 +200,41 @@ def build_tools() -> dict[str, Tool]:
+             },
+             handler=get_column_values,
+         ),
++        Tool(
++            name="ask_user",
++            description=(
++                "Ask the user a short clarifying question when the request is ambiguous and a guess would "
++                "change the answer. Ends your turn."
++            ),
++            parameters={
++                "type": "object",
++                "properties": {"question": {"type": "string"}},
++                "required": ["question"],
++            },
++            handler=ask_user,
++            terminal=True,
++        ),
++        Tool(
++            name="get_table_schema",
++            description="Full columns, docs, values and foreign keys of one table. Use before querying a table.",
++            parameters={"type": "object", "properties": {"table": {"type": "string"}}, "required": ["table"]},
++            handler=get_table_schema,
++        ),
++        Tool(
++            name="find_similar_queries",
++            description="Verified SQL for similar past questions. Check this first; adapt a match if one fits.",
++            parameters={"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
++            handler=find_similar_queries,
++        ),
++        Tool(
++            name="search_glossary",
++            description=(
++                "Look up what a business term means in the column documentation (e.g. 'region', 'in debt'). "
++                "Use for meaning; use get_column_values for exact spelling of a value."
++            ),
++            parameters={"type": "object", "properties": {"term": {"type": "string"}}, "required": ["term"]},
++            handler=search_glossary,
++        ),
+     ]
+     return {tool.name: tool for tool in tools}
+ 
+@@ -163,6 +244,9 @@ def call_tool(tools: dict[str, Tool], ctx: ToolContext, name: str, raw_arguments
+     tool = tools.get(name)
+     if tool is None:
+         return ToolOutput(f"Unknown tool '{name}'. Available tools: {', '.join(tools)}.")
++    ctx.calls[name] += 1
++    if ctx.calls[name] > ctx.settings.max_calls_per_tool:
++        return ToolOutput(f"Call limit reached for {name} on this question. Use what you have and submit_answer.")
+     try:
+         arguments = json.loads(raw_arguments or "{}")
+     except json.JSONDecodeError as exc:
