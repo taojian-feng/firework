@@ -91,3 +91,45 @@ def test_text_reply_after_run_sql_falls_back_to_that_result(conn):
     out = agent.ask("How many cards?")
     assert out.ok and out.result.rows == [(892,)] and out.sql.startswith("SELECT COUNT(*)")
     assert out.steps[-1].kind == "fallback"
+
+
+def _extra_tool(name, handler, terminal):
+    from src.tools import Tool
+
+    return Tool(name=name, description=name, parameters={"type": "object", "properties": {}}, handler=handler,
+                terminal=terminal)
+
+
+def test_terminal_tool_can_end_turn_with_a_message(conn):
+    from src.tools import ToolOutput, build_tools
+
+    tools = build_tools()
+    tools["ask_user"] = _extra_tool(
+        "ask_user", lambda ctx, question: ToolOutput("Asked.", final_message=question), terminal=True
+    )
+    settings = Settings(api_key="test")
+    client = FakeClient([llm_response(tool_calls=[tool_call("ask_user", question="Which year?")])])
+    agent = SQLAgent(settings, client=client, conn=conn, tools=tools)
+    out = agent.ask("Show me the trend")
+    assert not out.ok and out.message == "Which year?" and out.llm_calls == 1
+    assert agent.history[-1]["content"] == "Which year?"  # a follow-up answer sees the question
+
+
+def test_non_terminal_tool_cannot_end_turn(conn):
+    from src.db import execute_sql
+    from src.tools import ToolOutput, build_tools
+
+    def sneaky(ctx):
+        return ToolOutput("rows", final_result=execute_sql(ctx.conn, "SELECT 1"))
+
+    tools = build_tools()
+    tools["sneaky"] = _extra_tool("sneaky", sneaky, terminal=False)
+    client = FakeClient(
+        [
+            llm_response(tool_calls=[tool_call("sneaky")]),
+            llm_response(tool_calls=[tool_call("submit_answer", call_id="c2", sql="SELECT COUNT(*) FROM card")]),
+        ]
+    )
+    agent = SQLAgent(Settings(api_key="test"), client=client, conn=conn, tools=tools)
+    out = agent.ask("How many cards?")
+    assert out.ok and out.result.rows == [(892,)] and out.llm_calls == 2

@@ -88,7 +88,7 @@ flowchart TD
 | Exploration | `tools.run_sql`, `tools.get_column_values` | Model checks data or values before answering; rows go back to the model only | Lets the model verify when unsure, without the user seeing scratch work |
 | Final answer | `tools.submit_answer` | Executes the final SQL. An error or a first empty result goes back to the model | Self-repair: broken SQL is fixed before the user sees it |
 | Safety | `db.execute_sql` | One `SELECT`/`WITH` statement, `mode=ro` + `query_only`, 1,000-row cap, 10s timeout, errors returned as values | Model output is untrusted; the database can't be modified |
-| Stop conditions | `SQLAgent.ask` | (1) `submit_answer` accepted, (2) plain-text reply, (3) `max_steps` reached (the last step adds a "submit now" nudge), (4) API error | Bounded latency and cost per question |
+| Stop conditions | `SQLAgent.ask` | (1) a terminal tool ends the turn (`submit_answer` accepted, or a terminal tool returns a reply for the user), (2) plain-text reply, (3) `max_steps` reached (the last step adds a "submit now" nudge), (4) API error | Bounded latency and cost per question |
 | Fallbacks | `SQLAgent.ask` | SQL in a code block → executed as a submit. Prose after a successful `run_sql` → that result is used | Some models (gpt-oss-120b) skip the final tool call: 8/10 → 10/10 |
 | Output | `cli.render`, `AgentResult` | SQL panel, assumptions, results table, latency, LLM calls, tokens. `/trace` shows each step | Trust: users can check the SQL and the interpretation |
 
@@ -152,8 +152,9 @@ sequenceDiagram
 ## Where to extend it (Stage 2)
 
 * **New tool:** write `handler(ctx, **args) -> ToolOutput` and add a `Tool(...)` entry in
-  `build_tools()` ([src/tools.py](../src/tools.py)). `terminal=True` makes it end the turn. The loop
-  doesn't change.
+  `build_tools()` ([src/tools.py](../src/tools.py)). Only `terminal=True` tools can end the turn, and
+  they do it by returning `final_result` (an accepted query) or `final_message` (a reply such as a
+  clarifying question). The loop doesn't change.
 * **Routing:** `_call_llm` is the single place where model choice happens. A router (a cheap model for easy
   questions, a stronger one for hard ones) goes there.
 * **Load testing:** the `AgentResult` timings (`latency_s`, `llm_s`, `llm_calls`, tokens) are what

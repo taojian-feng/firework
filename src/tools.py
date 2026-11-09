@@ -1,7 +1,12 @@
 """Tools the agent can call, and the registry that wires them into the agent loop.
 
 Adding a tool = write a handler function + add a Tool(...) entry to build_tools(). The agent
-loop does not need to change. A tool marked terminal=True ends the loop when it returns a result.
+loop does not need to change.
+
+Stopping: only a tool marked terminal=True can end the turn, and only when its output says so
+(ToolOutput.ends_turn): either an accepted SQL result (final_result) or a reply for the user
+(final_message, e.g. a clarifying question). A terminal tool can also return neither, as
+submit_answer does when the query fails, and the loop continues so the model can repair it.
 """
 
 import json
@@ -29,6 +34,11 @@ class ToolOutput:
     content: str  # what the model sees as the tool result
     final_result: QueryResult | None = None  # set only when a terminal tool accepted an answer
     assumptions: str = ""
+    final_message: str | None = None  # a terminal tool ending the turn with a reply instead of SQL
+
+    @property
+    def ends_turn(self) -> bool:
+        return self.final_result is not None or self.final_message is not None
 
 
 Handler = Callable[..., ToolOutput]
