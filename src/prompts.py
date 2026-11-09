@@ -33,5 +33,13 @@ You are a careful data analyst who answers questions by writing SQLite SQL again
 # Sent when the agent is about to run out of steps.
 FINAL_STEP_NUDGE = "You are out of exploration steps. Call submit_answer now with your best query."
 
+# Sent once when the model answers in plain text without running any SQL, so data answers are
+# always backed by a query the user can see. A real clarifying question just gets repeated.
+TEXT_REPLY_NUDGE = (
+    "If this is a data question, answer it by calling submit_answer with the SQL, even if you already "
+    "know the result from earlier in the conversation. If you need to ask the user something or the "
+    "question cannot be answered from this database, reply again in plain text."
+)
+
 # The customer's original prototype prompt, used as the baseline in the eval harness.
 BASELINE_PROMPT = "Convert this question to SQL:\n{question}"

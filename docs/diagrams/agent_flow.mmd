@@ -46,7 +46,9 @@ flowchart TD
     TXT -- "yes" --> SUB
     TXT -- "no" --> FB{"run_sql already<br/>returned rows?"}
     FB -- "yes · fallback" --> DONE
-    FB -- "no" --> CLAR["Clarifying question<br/>or 'not in this data'"]
+    FB -- "no" --> NUDGED{"Already nudged,<br/>or last step?"}
+    NUDGED -- "no" --> TNUDGE["Ask once: call submit_answer<br/>if this is a data question"] --> BUDGET
+    NUDGED -- "yes" --> CLAR["Clarifying question<br/>or 'not in this data'"]
 
     DONE(["AgentResult<br/>SQL · rows · assumptions<br/>latency · LLM calls · tokens"])
     DONE --> RENDER["cli.render<br/>SQL panel · assumption · results table · timing"]

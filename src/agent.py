@@ -9,8 +9,9 @@ One question flows like this:
       -> AgentResult (sql, rows, assumptions, timings, token usage)
 
 Happy path is ONE LLM call (the model submits immediately), which is what keeps P50 latency low.
-The loop stops when: submit_answer succeeds, the model replies in plain text (e.g. a clarifying
-question), or the step budget (settings.max_steps) runs out.
+The loop stops when: a terminal tool ends the turn (submit_answer succeeds, or a terminal tool
+returns a reply for the user), the model replies in plain text (e.g. a clarifying question), or the
+step budget (settings.max_steps) runs out.
 """
 
 import json
@@ -24,7 +25,7 @@ from openai import OpenAI
 
 from src.config import Settings
 from src.db import QueryResult, connect_readonly
-from src.prompts import FINAL_STEP_NUDGE, SYSTEM_PROMPT
+from src.prompts import FINAL_STEP_NUDGE, SYSTEM_PROMPT, TEXT_REPLY_NUDGE
 from src.schema import build_schema_context
 from src.tools import Tool, ToolContext, build_tools, call_tool
 
@@ -123,6 +124,7 @@ class SQLAgent:
             {"role": "user", "content": question},
         ]
 
+        text_nudged = False
         for step in range(self.settings.max_steps):
             if step == self.settings.max_steps - 1:
                 messages.append({"role": "user", "content": FINAL_STEP_NUDGE})
@@ -149,19 +151,29 @@ class SQLAgent:
                     out.assumptions = text[:300]
                     out.steps.append(Step("fallback", "used last successful run_sql result", 0.0))
                     break
+                if not text_nudged and step < self.settings.max_steps - 1:
+                    # No SQL at all, e.g. the model repeated a result from the conversation history.
+                    # Ask once for submit_answer; a genuine clarifying question comes back as text.
+                    text_nudged = True
+                    messages += [{"role": "assistant", "content": text}, {"role": "user", "content": TEXT_REPLY_NUDGE}]
+                    out.steps.append(Step("nudge", "plain-text reply: asked for submit_answer", 0.0))
+                    continue
                 out.message = text or "The model returned an empty response."
                 break
 
             messages.append(_assistant_message(message))
+            done = False
             for tool_call in message.tool_calls:
+                name = tool_call.function.name
                 t0 = time.perf_counter()
-                output = call_tool(self.tools, ctx, tool_call.function.name, tool_call.function.arguments)
-                out.steps.append(
-                    Step("tool", f"{tool_call.function.name}({tool_call.function.arguments})", time.perf_counter() - t0)
-                )
+                output = call_tool(self.tools, ctx, name, tool_call.function.arguments)
+                out.steps.append(Step("tool", f"{name}({tool_call.function.arguments})", time.perf_counter() - t0))
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": output.content})
-                self._accept(output, out)
-            if out.result is not None:
+                # Only a terminal tool can end the turn; the first one that does wins.
+                tool = self.tools.get(name)
+                if not done and tool is not None and tool.terminal:
+                    done = self._accept(output, out)
+            if done:
                 break
         else:
             out.message = f"Stopped after {self.settings.max_steps} steps without a final answer."
@@ -202,11 +214,15 @@ class SQLAgent:
 
     @staticmethod
     def _accept(output, out: AgentResult) -> bool:
-        if output.final_result is None:
+        """Record a terminal tool's output on the result. Returns True if it ends the turn."""
+        if not output.ends_turn:
             return False
-        out.result = output.final_result
-        out.sql = output.final_result.sql
-        out.assumptions = output.assumptions
+        if output.final_result is not None:
+            out.result = output.final_result
+            out.sql = output.final_result.sql
+            out.assumptions = output.assumptions
+        else:
+            out.message = output.final_message
         return True
 
     def _remember(self, out: AgentResult) -> None:
