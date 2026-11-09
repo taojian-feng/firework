@@ -114,7 +114,10 @@ with hundreds of tables the same per-table text becomes the documents for embedd
 the user as a table, with no second LLM call just to phrase them, which keeps latency down. Exploration
 tools (`run_sql`, `get_column_values`) are there for when the model is unsure. The loop stops when
 `submit_answer` succeeds, when the model replies in plain text (a clarifying question, or "this data
-isn't in the schema"), or when the step budget runs out (`T2SQL_MAX_STEPS`, also a latency cap).
+isn't in the schema"), or when the step budget runs out (`T2SQL_MAX_STEPS`, also a latency cap). A
+plain-text reply that ran no SQL is sent back once with "call submit_answer if this is a data
+question", because models sometimes repeat a number from earlier in the conversation instead of
+querying. That way every data answer comes with SQL the user can check.
 
 **Self-repair.** SQL errors and a first empty result are returned to the model as tool results, so
 it fixes its own query (wrong column, bad filter value) instead of failing in front of the user.

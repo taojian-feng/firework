@@ -58,7 +58,9 @@ flowchart TD
     TXT -- "yes" --> SUB
     TXT -- "no" --> FB{"run_sql already<br/>returned rows?"}
     FB -- "yes · fallback" --> DONE
-    FB -- "no" --> CLAR["Clarifying question<br/>or 'not in this data'"]
+    FB -- "no" --> NUDGED{"Already nudged,<br/>or last step?"}
+    NUDGED -- "no" --> TNUDGE["Ask once: call submit_answer<br/>if this is a data question"] --> BUDGET
+    NUDGED -- "yes" --> CLAR["Clarifying question<br/>or 'not in this data'"]
 
     DONE(["AgentResult<br/>SQL · rows · assumptions<br/>latency · LLM calls · tokens"])
     DONE --> RENDER["cli.render<br/>SQL panel · assumption · results table · timing"]
@@ -88,7 +90,7 @@ flowchart TD
 | Exploration | `tools.run_sql`, `tools.get_column_values` | Model checks data or values before answering; rows go back to the model only | Lets the model verify when unsure, without the user seeing scratch work |
 | Final answer | `tools.submit_answer` | Executes the final SQL. An error or a first empty result goes back to the model | Self-repair: broken SQL is fixed before the user sees it |
 | Safety | `db.execute_sql` | One `SELECT`/`WITH` statement, `mode=ro` + `query_only`, 1,000-row cap, 10s timeout, errors returned as values | Model output is untrusted; the database can't be modified |
-| Stop conditions | `SQLAgent.ask` | (1) a terminal tool ends the turn (`submit_answer` accepted, or a terminal tool returns a reply for the user), (2) plain-text reply, (3) `max_steps` reached (the last step adds a "submit now" nudge), (4) API error | Bounded latency and cost per question |
+| Stop conditions | `SQLAgent.ask` | (1) a terminal tool ends the turn (`submit_answer` accepted, or a terminal tool returns a reply for the user), (2) plain-text reply (asked once to call `submit_answer` instead, so a data answer always comes with SQL; a real clarifying question comes back as text again), (3) `max_steps` reached (the last step adds a "submit now" nudge), (4) API error | Bounded latency and cost per question |
 | Fallbacks | `SQLAgent.ask` | SQL in a code block → executed as a submit. Prose after a successful `run_sql` → that result is used | Some models (gpt-oss-120b) skip the final tool call: 8/10 → 10/10 |
 | Output | `cli.render`, `AgentResult` | SQL panel, assumptions, results table, latency, LLM calls, tokens. `/trace` shows each step | Trust: users can check the SQL and the interpretation |
 

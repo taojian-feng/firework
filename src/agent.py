@@ -25,7 +25,7 @@ from openai import OpenAI
 
 from src.config import Settings
 from src.db import QueryResult, connect_readonly
-from src.prompts import FINAL_STEP_NUDGE, SYSTEM_PROMPT
+from src.prompts import FINAL_STEP_NUDGE, SYSTEM_PROMPT, TEXT_REPLY_NUDGE
 from src.schema import build_schema_context
 from src.tools import Tool, ToolContext, build_tools, call_tool
 
@@ -124,6 +124,7 @@ class SQLAgent:
             {"role": "user", "content": question},
         ]
 
+        text_nudged = False
         for step in range(self.settings.max_steps):
             if step == self.settings.max_steps - 1:
                 messages.append({"role": "user", "content": FINAL_STEP_NUDGE})
@@ -150,6 +151,13 @@ class SQLAgent:
                     out.assumptions = text[:300]
                     out.steps.append(Step("fallback", "used last successful run_sql result", 0.0))
                     break
+                if not text_nudged and step < self.settings.max_steps - 1:
+                    # No SQL at all, e.g. the model repeated a result from the conversation history.
+                    # Ask once for submit_answer; a genuine clarifying question comes back as text.
+                    text_nudged = True
+                    messages += [{"role": "assistant", "content": text}, {"role": "user", "content": TEXT_REPLY_NUDGE}]
+                    out.steps.append(Step("nudge", "plain-text reply: asked for submit_answer", 0.0))
+                    continue
                 out.message = text or "The model returned an empty response."
                 break
 
