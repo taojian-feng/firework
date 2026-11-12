@@ -1,12 +1,17 @@
 """Shared fixtures. Tests run offline: the LLM is replaced by a scripted fake client."""
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from src.db import connect_readonly
+# The SQL-loop tests script every LLM response, so the guardrail's extra classifier call is off by
+# default here. Guardrail tests turn it on explicitly with Settings(guardrail=True).
+os.environ["T2SQL_GUARDRAIL"] = "0"
+
+from src.db import connect_readonly  # noqa: E402
 
 DB_PATH = Path("data/financial.sqlite")
 

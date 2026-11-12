@@ -1,8 +1,9 @@
-"""Interactive CLI. Run with: uv run cli  (or: python -m src.cli)
+"""Interactive CLI for the finance assistant. Run with: uv run cli  (or: python -m src.cli)
 
     uv run cli                                  # sample banking database
     uv run cli --db path/to/other.sqlite        # any SQLite database (column docs are optional)
     uv run cli --model accounts/fireworks/models/gpt-oss-120b
+    uv run cli --no-web --no-guardrail          # the original text-to-SQL behaviour
 """
 
 import argparse
@@ -19,8 +20,10 @@ from src.config import Settings
 DISPLAY_ROWS = 50
 
 HELP = """\
-Ask a question in plain English, e.g. "How many accounts are in Prague?"
-Follow-ups work: "now only for female clients", "sort that by amount".
+Ask a finance question in plain English.
+  Bank data (SQL):   "How many accounts are in Prague?"
+  Markets (web):     "What was NVIDIA's revenue last quarter?"
+Non-finance questions are refused. Follow-ups work: "now only for female clients".
 
 Commands:
   /schema   show the schema context the model sees
@@ -49,7 +52,10 @@ def render(answer: AgentResult) -> None:
         if len(result.rows) > DISPLAY_ROWS or result.truncated:
             console.print(f"[dim]Showing {DISPLAY_ROWS} of {len(result.rows)}{'+' if result.truncated else ''} rows.[/dim]")
     elif answer.message:
-        console.print(Panel(answer.message, border_style="magenta"))
+        title = {"web": "Web answer", "refused": "Out of scope"}.get(answer.route)
+        console.print(Panel(answer.message, title=title, border_style="blue" if answer.route == "web" else "magenta"))
+        for url in answer.sources:
+            console.print(f"[dim]source: {url}[/dim]")
     console.print(
         f"[dim]{answer.latency_s:.2f}s total ({answer.llm_s:.2f}s model, {answer.llm_calls} call(s)) · "
         f"{answer.prompt_tokens:,} in / {answer.completion_tokens:,} out tokens[/dim]"
@@ -69,6 +75,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--db", help="Path to a SQLite database (default: data/financial.sqlite)")
     parser.add_argument("--descriptions", help="Folder of column-description CSVs (optional)")
     parser.add_argument("--model", help="Fireworks model id")
+    parser.add_argument("--no-web", action="store_true", help="disable the web_search tool")
+    parser.add_argument("--no-guardrail", action="store_true", help="don't refuse non-finance questions")
     return parser.parse_args(argv)
 
 
@@ -82,6 +90,10 @@ def main(argv: list[str] | None = None) -> None:
         settings.description_dir = args.descriptions
     if args.model:
         settings.model = args.model
+    if args.no_web:
+        settings.web_search = False
+    if args.no_guardrail:
+        settings.guardrail = False
     if not settings.api_key:
         console.print("[red]FIREWORKS_API_KEY is not set.[/red] export it or put it in a .env file.")
         sys.exit(1)
@@ -94,7 +106,8 @@ def main(argv: list[str] | None = None) -> None:
 
     console.print(
         Panel.fit(
-            f"[bold]Text-to-SQL CLI[/bold]  ·  db: {settings.db_path}  ·  model: {settings.model}\n"
+            f"[bold]Finance assistant[/bold]  ·  db: {settings.db_path}  ·  model: {settings.model}  ·  "
+            f"web search: {'on' if settings.web_search else 'off'}  ·  guardrail: {'on' if settings.guardrail else 'off'}\n"
             "Type a question, /help for commands, exit to quit.",
             border_style="green",
         )

@@ -10,11 +10,14 @@ dependencies = [
     "pydantic",
     "python-dotenv",
     "rich>=15.0.0",
+    "ddgs>=9.16.1",
 ]
 
 [project.scripts]
 cli = "src.cli:main"
 eval = "src.evaluate:main"
+finance-eval = "src.finance_eval:main"
+loadtest = "src.loadtest:main"
 
 [build-system]
 requires = ["hatchling"]
