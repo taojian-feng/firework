@@ -1,17 +1,20 @@
-"""The text-to-SQL agent: a small, explicit tool-calling loop on a Fireworks-hosted open model.
+"""The finance assistant: a small, explicit tool-calling loop on a Fireworks-hosted open model.
 
 One question flows like this:
 
     user question
-      -> LLM (system prompt with the full grounded schema + recent conversation + question)
-      -> tool calls: run_sql / get_column_values (optional exploration)
-      -> submit_answer(sql)  -- executes the query; errors go back to the LLM to repair
-      -> AgentResult (sql, rows, assumptions, timings, token usage)
+      -> guardrail: one small LLM call, FINANCE or OTHER. OTHER -> polite refusal, no tools run.
+      -> LLM (system prompt with today's date + the full grounded schema + recent conversation)
+      -> bank data:   run_sql / get_column_values (optional) -> submit_answer(sql)
+         market data: get_quote (prices) / web_search (capped) -> final_answer(answer, sources)
+      -> AgentResult (route, sql + rows or answer + sources, timings, token usage)
 
-Happy path is ONE LLM call (the model submits immediately), which is what keeps P50 latency low.
-The loop stops when: a terminal tool ends the turn (submit_answer succeeds, or a terminal tool
-returns a reply for the user), the model replies in plain text (e.g. a clarifying question), or the
-step budget (settings.max_steps) runs out.
+Happy path for a database question is guardrail + ONE agent call. The loop stops when:
+  1. a terminal tool ends the turn (submit_answer succeeds, or final_answer),
+  2. the model replies in plain text (a clarifying question, or an answer after searching),
+  3. the step budget (settings.max_steps) runs out,
+  4. the time budget (settings.max_seconds) runs out, checked before each LLM call.
+Each LLM request also has its own timeout, and web_search refuses after settings.max_searches.
 """
 
 import json
@@ -19,13 +22,14 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from openai import OpenAI
 
 from src.config import Settings
 from src.db import QueryResult, connect_readonly
-from src.prompts import FINAL_STEP_NUDGE, SYSTEM_PROMPT, TEXT_REPLY_NUDGE
+from src.prompts import FINAL_STEP_NUDGE, GUARDRAIL_PROMPT, REFUSAL_MESSAGE, SYSTEM_PROMPT, TEXT_REPLY_NUDGE
 from src.schema import build_schema_context
 from src.tools import Tool, ToolContext, build_tools, call_tool
 
@@ -45,7 +49,10 @@ class AgentResult:
     sql: str | None = None
     result: QueryResult | None = None
     assumptions: str = ""
-    message: str = ""  # plain-text reply (clarifying question, refusal, or failure reason)
+    message: str = ""  # plain-text reply (web answer, clarifying question, refusal, or failure reason)
+    route: str = ""  # "sql", "web", "refused", or "text" (clarifying question / no answer)
+    sources: list[str] = field(default_factory=list)  # URLs behind a web answer
+    error: str = ""  # set when the turn failed: LLM error, step budget or time budget
     steps: list[Step] = field(default_factory=list)
     llm_calls: int = 0
     prompt_tokens: int = 0
@@ -97,16 +104,31 @@ class SQLAgent:
         client: OpenAI | None = None,
         conn: sqlite3.Connection | None = None,
         tools: dict[str, Tool] | None = None,
+        search_fn=None,
+        quote_fn=None,
+        today: date | None = None,
     ) -> None:
         self.settings = settings or Settings()
         self.conn = conn or connect_readonly(self.settings.db_path)
         self.client = client or OpenAI(
-            api_key=self.settings.api_key, base_url=self.settings.base_url, timeout=60, max_retries=2
+            api_key=self.settings.api_key,
+            base_url=self.settings.base_url,
+            timeout=self.settings.llm_timeout_s,
+            max_retries=2,
         )
-        self.tools = tools or build_tools()
+        self.tools = tools or build_tools(web=self.settings.web_search)
+        self.search_fn = search_fn  # None = real web search (ddgs); tests pass a fake
+        self.quote_fn = quote_fn  # None = real quotes (yfinance); tests pass a fake
         # Built once per session. A stable system prompt also lets the server reuse its prompt cache.
+        # Today's date is in it so the model searches for current data, not its training cutoff.
         self.schema_text = build_schema_context(self.conn, self.settings.description_dir)
-        self.system_prompt = SYSTEM_PROMPT.format(schema=self.schema_text)
+        self.system_prompt = SYSTEM_PROMPT.format(
+            schema=self.schema_text,
+            today=(today or date.today()).strftime("%A %d %B %Y"),
+            max_searches=self.settings.max_searches,
+        )
+        if not self.settings.web_search:
+            self.system_prompt += "\nWeb search is turned off: answer only from the database, and say so for market questions.\n"
         self.history: list[dict[str, Any]] = []  # compact Q/A pairs for follow-up questions
 
     def reset(self) -> None:
@@ -117,7 +139,11 @@ class SQLAgent:
     def ask(self, question: str) -> AgentResult:
         out = AgentResult(question=question)
         start = time.perf_counter()
-        ctx = ToolContext(conn=self.conn, settings=self.settings)
+        if self.settings.guardrail and not self._is_finance(question, out):
+            out.route, out.message = "refused", REFUSAL_MESSAGE
+            out.latency_s = time.perf_counter() - start
+            return out  # not added to history: an off-topic turn shouldn't steer follow-ups
+        ctx = ToolContext(conn=self.conn, settings=self.settings, search_fn=self.search_fn, quote_fn=self.quote_fn)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt},
             *self.history,
@@ -126,6 +152,11 @@ class SQLAgent:
 
         text_nudged = False
         for step in range(self.settings.max_steps):
+            if step > 0 and time.perf_counter() - start > self.settings.max_seconds:
+                out.error = out.message = (
+                    f"Stopped: the {self.settings.max_seconds:.0f}s time budget ran out before a final answer."
+                )
+                break
             if step == self.settings.max_steps - 1:
                 messages.append({"role": "user", "content": FINAL_STEP_NUDGE})
             message = self._call_llm(messages, out)
@@ -136,6 +167,10 @@ class SQLAgent:
                 # The model answered in prose. Some models put SQL in a code block instead of
                 # calling the tool; treat that as a submit so the user still gets results.
                 text = (message.content or "").strip()
+                if (ctx.searches or ctx.quotes) and text:
+                    # Answered from web results in prose instead of calling final_answer: accept it.
+                    out.message, out.sources = text, ctx.sources[:3]
+                    break
                 sql_match = _SQL_IN_TEXT.search(text)
                 if sql_match:
                     messages.append({"role": "assistant", "content": text})
@@ -176,13 +211,50 @@ class SQLAgent:
             if done:
                 break
         else:
-            out.message = f"Stopped after {self.settings.max_steps} steps without a final answer."
+            out.error = out.message = f"Stopped after {self.settings.max_steps} steps without a final answer."
 
+        if out.ok:
+            out.route = "sql"
+        elif (ctx.searches or ctx.quotes) and not out.error:
+            out.route = "web"
+        else:
+            out.route = "text"
         out.latency_s = time.perf_counter() - start
         self._remember(out)
         return out
 
     # -- helpers ---------------------------------------------------------------------------------
+
+    def _is_finance(self, question: str, out: AgentResult) -> bool:
+        """Guardrail: one short classifier call. Fails open (the system prompt also refuses)."""
+        previous = next((m["content"] for m in reversed(self.history) if m["role"] == "user"), "(none)")
+        kwargs: dict[str, Any] = dict(
+            model=self.settings.guard_model or self.settings.model,
+            messages=[{"role": "user", "content": GUARDRAIL_PROMPT.format(previous=previous, question=question)}],
+            temperature=0.0,
+            max_tokens=self.settings.max_tokens,
+        )
+        if self.settings.reasoning_effort:
+            kwargs["reasoning_effort"] = self.settings.reasoning_effort
+        t0 = time.perf_counter()
+        try:
+            response = self.client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            out.steps.append(Step("guard", f"classifier failed, allowing: {type(exc).__name__}", time.perf_counter() - t0))
+            return True
+        self._record_usage(out, response, time.perf_counter() - t0)
+        words = re.findall(r"\b(FINANCE|OTHER)\b", (response.choices[0].message.content or "").upper())
+        verdict = words[-1] if words else "FINANCE"  # unparseable -> allow
+        out.steps.append(Step("guard", verdict, time.perf_counter() - t0))
+        return verdict == "FINANCE"
+
+    @staticmethod
+    def _record_usage(out: AgentResult, response, elapsed: float) -> None:
+        out.llm_calls += 1
+        out.llm_s += elapsed
+        if response.usage:
+            out.prompt_tokens += response.usage.prompt_tokens or 0
+            out.completion_tokens += response.usage.completion_tokens or 0
 
     def _call_llm(self, messages: list[dict[str, Any]], out: AgentResult):
         kwargs: dict[str, Any] = dict(
@@ -198,15 +270,11 @@ class SQLAgent:
         t0 = time.perf_counter()
         try:
             response = self.client.chat.completions.create(**kwargs)
-        except Exception as exc:  # network, auth, rate limit: report instead of crashing the CLI
-            out.message = f"LLM request failed: {type(exc).__name__}: {exc}"
+        except Exception as exc:  # network, auth, rate limit, timeout: report instead of crashing
+            out.error = out.message = f"LLM request failed: {type(exc).__name__}: {exc}"
             return None
         elapsed = time.perf_counter() - t0
-        out.llm_calls += 1
-        out.llm_s += elapsed
-        if response.usage:
-            out.prompt_tokens += response.usage.prompt_tokens or 0
-            out.completion_tokens += response.usage.completion_tokens or 0
+        self._record_usage(out, response, elapsed)
         message = response.choices[0].message
         names = [tc.function.name for tc in message.tool_calls or []]
         out.steps.append(Step("llm", f"-> {', '.join(names) or 'text reply'}", elapsed))
@@ -223,6 +291,7 @@ class SQLAgent:
             out.assumptions = output.assumptions
         else:
             out.message = output.final_message
+            out.sources = output.sources
         return True
 
     def _remember(self, out: AgentResult) -> None:

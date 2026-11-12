@@ -7,9 +7,11 @@ for the design; this file is the short version for working in the code.
 - `uv run pytest` – offline tests (fake LLM client in tests/conftest.py). Run after every change.
 - `uv run cli` – interactive CLI (needs FIREWORKS_API_KEY).
 - `uv run eval [--baseline] [--model M] [--repeat N] [--questions q_001,q_002]` – dev-set eval.
+- `uv run finance-eval` – routing eval (SQL / web / refuse); `uv run loadtest` – concurrency benchmark.
 
 ## Layout
-- src/agent.py – `SQLAgent.ask()` is the loop. Stops on: terminal tool result, plain-text reply, step budget.
+- src/agent.py – `SQLAgent.ask()` is the loop. Guardrail call first (finance or refuse). Stops on: terminal
+  tool result, plain-text reply, step budget, time budget. web_search has its own per-question cap.
 - src/tools.py – tool registry. New tool = handler(ctx, **args) -> ToolOutput, plus a Tool(...) in build_tools().
 - src/schema.py – schema text for the prompt (introspection + doc CSVs + enum values).
 - src/db.py – the only place SQL is executed. Keep it read-only.

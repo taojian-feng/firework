@@ -64,6 +64,87 @@ answer), `/reset` (new topic), `/help`, `exit` / `quit`.
 Other databases: `uv run cli --db path/to/any.sqlite` (column docs are optional, add
 `--descriptions dir/` if you have them). Other models: `uv run cli --model accounts/fireworks/models/gpt-oss-120b`.
 
+## Finance assistant: web search, guardrail, stop conditions
+
+The CLI is now a finance-only assistant with two sources. Questions about the bank's own data
+go to SQL as before; market and general finance questions go to the web; everything else is
+refused.
+
+```
+question
+  │
+  ├─ 1. guardrail (src/agent.py: _is_finance)  one short LLM call: FINANCE or OTHER
+  │       OTHER ──► "I can only help with finance questions"   (no tools run, nothing remembered)
+  │
+  └─ 2. agent loop, one set of tools, the model picks:
+          bank data    run_sql / get_column_values ─► submit_answer(sql)       route = "sql"
+          prices       get_quote(ticker)            ─┐
+          market data  web_search(query) ≤ 3 times ─┴► final_answer(answer, sources)  route = "web"
+```
+
+**Routing.** There is no hand-written router. The guardrail only decides *in scope or not*. Inside
+scope, the model chooses the tool, guided by the tool descriptions ("never use web_search for the
+bank's own clients, accounts, loans or cards") and one rule in the system prompt ("if the answer is
+in the database, use SQL; otherwise search, never answer market questions from memory"). Adding a
+third source later is one more tool, not a new branch in the code.
+
+**Why a separate guardrail call** instead of only a prompt rule: it is cheap (a few hundred tokens,
+can run on a small model via `T2SQL_GUARD_MODEL`), it is testable on its own, and an off-topic or
+prompt-injection question never reaches the tools. It sees the previous question, so follow-ups like
+"and for 1997?" stay in scope. If the classifier call fails it lets the question through (fail
+open), because the main prompt also refuses non-finance questions; a stricter deployment would fail
+closed. Cost: one extra call per question (about +0.3 to 0.5 s). The next optimisation is to run it
+in parallel with the first agent call and drop that answer if the verdict is OTHER.
+
+**Prices come from data, not search.** A first version answered "today NVIDIA stock price" from
+search snippets and reported an after-hours price from an earlier day as today's: snippets carry no
+reliable timestamp. `get_quote` (yfinance) returns the latest price *with its timestamp*, and the
+prompt says never to take a price from snippets. web_search stays for news, earnings and context.
+In production this would be a licensed market-data API; the tool interface stays the same.
+
+**Fresh results.** Today's date is in the system prompt, and the model is told to put the year
+(or month and year) in time-sensitive searches and to say how recent its information is. Without
+it, the model searches as if it were its training cutoff and returns year-old prices.
+
+**Stop conditions.** One question can't hang or run up cost:
+
+| Stop | Where | Default |
+|---|---|---|
+| `submit_answer` succeeds or `final_answer` is called (terminal tools) | `tools.py`, `_accept` | |
+| Plain-text reply (clarifying question, or an answer after searching) | `ask()` | |
+| Step budget: max LLM calls per question | `T2SQL_MAX_STEPS` | 6 |
+| Time budget, checked before every LLM call after the first | `T2SQL_MAX_SECONDS` | 30 s |
+| Timeout per LLM request (client also retries twice) | `T2SQL_LLM_TIMEOUT_S` | 60 s |
+| Web searches per question; then the tool says "limit reached, answer now" | `T2SQL_MAX_SEARCHES` | 3 |
+| Timeout per web search | `T2SQL_SEARCH_TIMEOUT_S` | 10 s |
+
+A failed search (timeout, rate limit) comes back to the model as text, like a SQL error, so it can
+try another query or answer with what it has. `AgentResult.error` is set when a turn stops on a
+budget or an API error, which is what the load test counts as an error.
+
+**Try it**
+
+```bash
+uv run cli                       # "How many clients live in Prague?" · "How did NVIDIA do last quarter?" · "Weather in London?"
+uv run cli --no-web --no-guardrail   # the original text-to-SQL behaviour
+uv run finance-eval              # 13 questions: 4 SQL, 5 web (1 price), 4 refuse -> per-route accuracy and latency
+uv run loadtest --concurrency 1,4,8 --duration 30            # p50/p95, qps, error rate per level
+uv run loadtest --route sql --concurrency 1,8,16 --model accounts/fireworks/models/gpt-oss-120b
+```
+
+**Eval** ([evals/finance_questions.json](evals/finance_questions.json),
+[src/finance_eval.py](src/finance_eval.py)). A question passes when it takes the expected route and
+the answer checks out: SQL results match the gold query (execution match), web answers come with
+at least one source, refusals come from the guardrail. Web answer *content* isn't graded
+automatically because it changes daily; the saved report has every answer and trace to read.
+
+**Load test** ([src/loadtest.py](src/loadtest.py)). Closed loop: N workers, each with its own
+agent and DB connection, ask random questions back to back for a fixed time. It reports requests,
+throughput (qps), p50/p95/max latency, error rate with sample errors, LLM calls and tokens per
+question. Watch how p95 and errors move with concurrency: 429s mean a rate limit, 503s mean load
+shedding or a deployment scaling up. DuckDuckGo rate-limits quickly, so `--route sql` measures the
+model and the database without it.
+
 ## How it works
 
 Detailed diagrams (control flow and a step-by-step sequence) are in
@@ -91,11 +172,13 @@ question ──► SQLAgent.ask()  (src/agent.py)
 |---|---|
 | [src/cli.py](src/cli.py) | REPL, rendering, slash commands |
 | [src/agent.py](src/agent.py) | The tool-calling loop and stop conditions, conversation memory |
-| [src/tools.py](src/tools.py) | Tool registry: `submit_answer`, `run_sql`, `get_column_values` |
+| [src/tools.py](src/tools.py) | Tool registry: `submit_answer`, `run_sql`, `get_column_values`, `web_search`, `get_quote`, `final_answer` |
 | [src/schema.py](src/schema.py) | Introspects any SQLite DB + optional doc CSVs into prompt text |
 | [src/db.py](src/db.py) | Read-only connection, SQL guard, row cap, timeout |
 | [src/prompts.py](src/prompts.py) | System prompt and the customer's baseline prompt |
 | [src/evaluate.py](src/evaluate.py) | Eval harness: execution accuracy, latency P50/P95, tokens, cost |
+| [src/finance_eval.py](src/finance_eval.py) | Routing eval for the finance assistant (SQL / web / refuse) |
+| [src/loadtest.py](src/loadtest.py) | Concurrency benchmark: p50/p95, throughput, error rate |
 | [tests/](tests/) | Offline tests. `FakeClient` in [tests/conftest.py](tests/conftest.py) stands in for the Fireworks API and returns pre-written model replies, so tests run without a key or network |
 
 ### Design decisions

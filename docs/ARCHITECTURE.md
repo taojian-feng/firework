@@ -161,3 +161,23 @@ sequenceDiagram
   questions, a stronger one for hard ones) goes there.
 * **Load testing:** the `AgentResult` timings (`latency_s`, `llm_s`, `llm_calls`, tokens) are what
   a concurrent load harness would aggregate. `src/evaluate.py` already reports P50/P95.
+
+## 3. Finance assistant: guardrail and two sources
+
+Added after the take-home. A guardrail call runs before the loop above, and two web tools join the
+same tool list. The loop itself is unchanged apart from the time budget and treating a plain-text
+reply after a search as the answer. (The PNG/SVG exports above predate this section.)
+
+```mermaid
+flowchart TD
+    Q(["Question"]) --> G{"Guardrail LLM call<br/>FINANCE or OTHER?<br/>sees previous question"}
+    G -- "OTHER" --> R["Refusal message<br/>no tools, not remembered"]
+    G -- "FINANCE (or classifier failed)" --> L["Agent loop<br/>system prompt has today's date"]
+    L --> T{"Model picks a tool"}
+    T -- "bank data" --> S["run_sql / get_column_values<br/>→ submit_answer(sql)"]
+    T -- "markets, general finance" --> W["web_search (ddgs)<br/>≤ max_searches per question"]
+    W --> F["final_answer(answer, sources)<br/>or plain-text answer"]
+    S --> D(["route = sql: SQL + table"])
+    F --> E(["route = web: answer + sources"])
+    L -. "step budget · time budget · LLM timeout" .-> X(["Stopped with error"])
+```

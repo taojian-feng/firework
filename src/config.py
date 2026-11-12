@@ -19,6 +19,16 @@ def _env_int(name: str, default: int) -> int:
     return int(value) if value else default
 
 
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    return float(value) if value else default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    return value.strip().lower() not in {"0", "false", "no", "off"} if value else default
+
+
 @dataclass
 class Settings:
     api_key: str = field(default_factory=lambda: os.getenv("FIREWORKS_API_KEY", ""))
@@ -30,6 +40,19 @@ class Settings:
     )
     # Agent loop limits: every LLM call costs ~1s, so the step budget is also a latency budget.
     max_steps: int = field(default_factory=lambda: _env_int("T2SQL_MAX_STEPS", 6))
+    # Wall-clock budget for one question, checked before every LLM call after the first.
+    max_seconds: float = field(default_factory=lambda: _env_float("T2SQL_MAX_SECONDS", 30.0))
+    # Finance assistant: refuse non-finance questions before the agent runs (one small LLM call).
+    guardrail: bool = field(default_factory=lambda: _env_bool("T2SQL_GUARDRAIL", True))
+    # Model for the guardrail classifier. Empty = same as `model`; a small model is cheaper.
+    guard_model: str = field(default_factory=lambda: os.getenv("T2SQL_GUARD_MODEL", ""))
+    # Web search tool (DuckDuckGo via the ddgs package) for market / general finance questions.
+    web_search: bool = field(default_factory=lambda: _env_bool("T2SQL_WEB_SEARCH", True))
+    max_searches: int = field(default_factory=lambda: _env_int("T2SQL_MAX_SEARCHES", 3))
+    search_results: int = field(default_factory=lambda: _env_int("T2SQL_SEARCH_RESULTS", 5))
+    search_timeout_s: int = field(default_factory=lambda: _env_int("T2SQL_SEARCH_TIMEOUT_S", 10))
+    # Timeout for one LLM request (the OpenAI client also retries twice).
+    llm_timeout_s: float = field(default_factory=lambda: _env_float("T2SQL_LLM_TIMEOUT_S", 60.0))
     # How many previous question/answer pairs are replayed for follow-up questions.
     history_turns: int = field(default_factory=lambda: _env_int("T2SQL_HISTORY_TURNS", 5))
     # SQL execution guardrails.
