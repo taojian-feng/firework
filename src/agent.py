@@ -6,7 +6,7 @@ One question flows like this:
       -> guardrail: one small LLM call, FINANCE or OTHER. OTHER -> polite refusal, no tools run.
       -> LLM (system prompt with today's date + the full grounded schema + recent conversation)
       -> bank data:   run_sql / get_column_values (optional) -> submit_answer(sql)
-         market data: web_search (capped)                     -> final_answer(answer, sources)
+         market data: get_quote (prices) / web_search (capped) -> final_answer(answer, sources)
       -> AgentResult (route, sql + rows or answer + sources, timings, token usage)
 
 Happy path for a database question is guardrail + ONE agent call. The loop stops when:
@@ -105,6 +105,7 @@ class SQLAgent:
         conn: sqlite3.Connection | None = None,
         tools: dict[str, Tool] | None = None,
         search_fn=None,
+        quote_fn=None,
         today: date | None = None,
     ) -> None:
         self.settings = settings or Settings()
@@ -117,6 +118,7 @@ class SQLAgent:
         )
         self.tools = tools or build_tools(web=self.settings.web_search)
         self.search_fn = search_fn  # None = real web search (ddgs); tests pass a fake
+        self.quote_fn = quote_fn  # None = real quotes (yfinance); tests pass a fake
         # Built once per session. A stable system prompt also lets the server reuse its prompt cache.
         # Today's date is in it so the model searches for current data, not its training cutoff.
         self.schema_text = build_schema_context(self.conn, self.settings.description_dir)
@@ -141,7 +143,7 @@ class SQLAgent:
             out.route, out.message = "refused", REFUSAL_MESSAGE
             out.latency_s = time.perf_counter() - start
             return out  # not added to history: an off-topic turn shouldn't steer follow-ups
-        ctx = ToolContext(conn=self.conn, settings=self.settings, search_fn=self.search_fn)
+        ctx = ToolContext(conn=self.conn, settings=self.settings, search_fn=self.search_fn, quote_fn=self.quote_fn)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt},
             *self.history,
@@ -165,7 +167,7 @@ class SQLAgent:
                 # The model answered in prose. Some models put SQL in a code block instead of
                 # calling the tool; treat that as a submit so the user still gets results.
                 text = (message.content or "").strip()
-                if ctx.searches and text:
+                if (ctx.searches or ctx.quotes) and text:
                     # Answered from web results in prose instead of calling final_answer: accept it.
                     out.message, out.sources = text, ctx.sources[:3]
                     break
@@ -213,7 +215,7 @@ class SQLAgent:
 
         if out.ok:
             out.route = "sql"
-        elif ctx.searches and not out.error:
+        elif (ctx.searches or ctx.quotes) and not out.error:
             out.route = "web"
         else:
             out.route = "text"

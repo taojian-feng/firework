@@ -182,3 +182,35 @@ def test_load_benchmark_reports_percentiles(conn):
     assert len(made) == 3 and len({id(a.conn) for a in made}) == 3
     assert report["requests"] == len(client.requests) > 0 and report["error_rate"] == 0
     assert report["p50_s"] <= report["p95_s"] and report["qps"] > 0
+
+
+def test_price_question_uses_get_quote(conn):
+    quote = {"ticker": "NVDA", "price": 181.2, "currency": "USD", "as_of": "2026-11-12 11:19 EST",
+             "previous_close": 179.5, "source": "https://finance.yahoo.com/quote/NVDA"}
+    asked = []
+    client = FakeClient(
+        [
+            llm_response(tool_calls=[tool_call("get_quote", ticker="NVDA")]),
+            llm_response(tool_calls=[tool_call("final_answer", call_id="f", answer="NVDA is $181.20 as of 11:19 EST.")]),
+        ]
+    )
+    agent = SQLAgent(Settings(api_key="test"), client=client, conn=conn, quote_fn=lambda t: asked.append(t) or quote)
+    out = agent.ask("today NVIDIA stock price")
+    assert asked == ["NVDA"] and out.route == "web"
+    assert out.sources == ["https://finance.yahoo.com/quote/NVDA"]
+    assert '"as_of": "2026-11-12 11:19 EST"' in client.requests[1]["messages"][-1]["content"]
+
+
+def test_bad_ticker_is_returned_to_the_model(conn):
+    def boom(ticker):
+        raise ValueError("no price data")
+
+    client = FakeClient(
+        [
+            llm_response(tool_calls=[tool_call("get_quote", ticker="NVIDIA")]),
+            llm_response(content="I couldn't find that ticker."),
+        ]
+    )
+    agent = SQLAgent(Settings(api_key="test"), client=client, conn=conn, quote_fn=boom)
+    agent.ask("NVIDIA price?")
+    assert "quote lookup failed" in client.requests[1]["messages"][-1]["content"].lower()

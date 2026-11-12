@@ -78,7 +78,8 @@ question
   │
   └─ 2. agent loop, one set of tools, the model picks:
           bank data    run_sql / get_column_values ─► submit_answer(sql)       route = "sql"
-          market data  web_search(query) ≤ 3 times ─► final_answer(answer, sources)  route = "web"
+          prices       get_quote(ticker)            ─┐
+          market data  web_search(query) ≤ 3 times ─┴► final_answer(answer, sources)  route = "web"
 ```
 
 **Routing.** There is no hand-written router. The guardrail only decides *in scope or not*. Inside
@@ -94,6 +95,12 @@ prompt-injection question never reaches the tools. It sees the previous question
 open), because the main prompt also refuses non-finance questions; a stricter deployment would fail
 closed. Cost: one extra call per question (about +0.3 to 0.5 s). The next optimisation is to run it
 in parallel with the first agent call and drop that answer if the verdict is OTHER.
+
+**Prices come from data, not search.** A first version answered "today NVIDIA stock price" from
+search snippets and reported an after-hours price from an earlier day as today's: snippets carry no
+reliable timestamp. `get_quote` (yfinance) returns the latest price *with its timestamp*, and the
+prompt says never to take a price from snippets. web_search stays for news, earnings and context.
+In production this would be a licensed market-data API; the tool interface stays the same.
 
 **Fresh results.** Today's date is in the system prompt, and the model is told to put the year
 (or month and year) in time-sensitive searches and to say how recent its information is. Without
@@ -120,7 +127,7 @@ budget or an API error, which is what the load test counts as an error.
 ```bash
 uv run cli                       # "How many clients live in Prague?" · "How did NVIDIA do last quarter?" · "Weather in London?"
 uv run cli --no-web --no-guardrail   # the original text-to-SQL behaviour
-uv run finance-eval              # 12 questions: 4 SQL, 4 web, 4 refuse -> per-route accuracy and latency
+uv run finance-eval              # 13 questions: 4 SQL, 5 web (1 price), 4 refuse -> per-route accuracy and latency
 uv run loadtest --concurrency 1,4,8 --duration 30            # p50/p95, qps, error rate per level
 uv run loadtest --route sql --concurrency 1,8,16 --model accounts/fireworks/models/gpt-oss-120b
 ```
@@ -165,7 +172,7 @@ question ──► SQLAgent.ask()  (src/agent.py)
 |---|---|
 | [src/cli.py](src/cli.py) | REPL, rendering, slash commands |
 | [src/agent.py](src/agent.py) | The tool-calling loop and stop conditions, conversation memory |
-| [src/tools.py](src/tools.py) | Tool registry: `submit_answer`, `run_sql`, `get_column_values`, `web_search`, `final_answer` |
+| [src/tools.py](src/tools.py) | Tool registry: `submit_answer`, `run_sql`, `get_column_values`, `web_search`, `get_quote`, `final_answer` |
 | [src/schema.py](src/schema.py) | Introspects any SQLite DB + optional doc CSVs into prompt text |
 | [src/db.py](src/db.py) | Read-only connection, SQL guard, row cap, timeout |
 | [src/prompts.py](src/prompts.py) | System prompt and the customer's baseline prompt |

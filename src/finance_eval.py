@@ -1,12 +1,13 @@
 """Routing eval for the finance assistant: does each question go to the right place?
 
-    uv run finance-eval                        # all 12 questions, default model
+    uv run finance-eval                        # all 13 questions, default model
     uv run finance-eval --model accounts/fireworks/models/gpt-oss-120b --repeat 3
     uv run finance-eval --ids ref_01,web_02
 
 Each question in evals/finance_questions.json has an expected route:
   * sql      -> answered with SQL, and the result matches the gold query (lenient execution match)
-  * web      -> answered after at least one web_search, with at least one source URL
+  * web      -> answered after web_search / get_quote, with at least one source URL
+                (and with the tool named in "tool", e.g. price questions must use get_quote)
   * refused  -> stopped by the guardrail
 A question passes when the route is right AND the answer checks out. The web answers' content is
 not graded automatically (it changes daily); read them in the saved report.
@@ -38,7 +39,9 @@ def check(agent: SQLAgent, question: dict, out: AgentResult) -> bool:
         gold = execute_sql(agent.conn, question["gold_sql"], agent.settings.max_rows, agent.settings.query_timeout_s)
         return results_match(out.result.rows, gold.rows, ordered=False, lenient=True)
     if out.route == "web":
-        return bool(out.sources) and bool(out.message)
+        used = " ".join(s.detail for s in out.steps if s.kind == "tool")
+        tool_ok = question.get("tool", "") in used  # e.g. a price question must use get_quote
+        return bool(out.sources) and bool(out.message) and tool_ok
     return True  # refused
 
 

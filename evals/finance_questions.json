@@ -11,6 +11,7 @@
   {"id": "web_02", "route": "web", "question": "What is the current US Federal Reserve interest rate?"},
   {"id": "web_03", "route": "web", "question": "What's the difference between a credit card and a debit card?"},
   {"id": "web_04", "route": "web", "question": "How is the S&P 500 doing this week?"},
+  {"id": "web_05", "route": "web", "tool": "get_quote", "question": "What is NVIDIA's stock price today?"},
   {"id": "ref_01", "route": "refused", "question": "What's the weather in London today?"},
   {"id": "ref_02", "route": "refused", "question": "Give me a recipe for lasagna."},
   {"id": "ref_03", "route": "refused", "question": "Who won the last football World Cup?"},

@@ -34,6 +34,9 @@ class ToolContext:
     # Web search: the search function (swapped for a fake in tests), searches used, URLs seen.
     search_fn: Callable[..., list[dict]] | None = None
     searches: int = 0
+    # Stock quotes: the quote function (also swapped in tests) and quotes used this question.
+    quote_fn: Callable[[str], dict] | None = None
+    quotes: int = 0
     sources: list[str] = field(default_factory=list)
 
 
@@ -138,6 +141,42 @@ def web_search(ctx: ToolContext, query: str, timelimit: str = "") -> ToolOutput:
     return ToolOutput("\n\n".join(lines))
 
 
+def yfinance_quote(ticker: str) -> dict:
+    """Latest price for a ticker from Yahoo Finance (yfinance), with the time of that price."""
+    import yfinance as yf  # imported here so the SQL-only path never needs it
+
+    t = yf.Ticker(ticker)
+    bars = t.history(period="1d", interval="1m", prepost=True)
+    if bars.empty:  # weekend / holiday: fall back to the last daily close
+        bars = t.history(period="5d")
+    if bars.empty:
+        raise ValueError(f"no price data for {ticker!r}")
+    info = t.fast_info
+    return {
+        "ticker": ticker.upper(),
+        "price": round(float(bars["Close"].iloc[-1]), 2),
+        "currency": info.get("currency") or "",
+        "as_of": bars.index[-1].strftime("%Y-%m-%d %H:%M %Z"),
+        "previous_close": round(float(info.get("previousClose") or 0), 2) or None,
+        "source": f"https://finance.yahoo.com/quote/{ticker.upper()}",
+    }
+
+
+def get_quote(ctx: ToolContext, ticker: str) -> ToolOutput:
+    """Structured price lookup: numbers come with a timestamp, unlike search snippets."""
+    cap = ctx.settings.max_searches
+    if ctx.quotes >= cap:
+        return ToolOutput(f"Quote limit reached ({cap} per question). Call final_answer now.")
+    ctx.quotes += 1
+    try:
+        quote = (ctx.quote_fn or yfinance_quote)(ticker.strip())
+    except Exception as exc:
+        return ToolOutput(f"Quote lookup failed for {ticker} ({type(exc).__name__}: {exc}). Check the ticker symbol.")
+    if quote.get("source") and quote["source"] not in ctx.sources:
+        ctx.sources.append(quote["source"])
+    return ToolOutput(json.dumps(quote))
+
+
 def final_answer(ctx: ToolContext, answer: str, sources: list[str] | None = None) -> ToolOutput:
     """End the turn with a written answer (used for web answers)."""
     if not answer.strip():
@@ -225,10 +264,24 @@ def build_tools(web: bool = True) -> dict[str, Tool]:
                 handler=web_search,
             ),
             Tool(
+                name="get_quote",
+                description=(
+                    "Get the latest market price of a stock, ETF, index, currency or crypto by ticker "
+                    "(e.g. NVDA, ^GSPC, EURUSD=X, BTC-USD), with the time of that price. Use this, not "
+                    "web_search, for any current or 'today' price question; use web_search for news and context."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {"ticker": {"type": "string", "description": "Yahoo Finance ticker symbol."}},
+                    "required": ["ticker"],
+                },
+                handler=get_quote,
+            ),
+            Tool(
                 name="final_answer",
                 description=(
                     "Give the user your FINAL written answer to a market or general finance question, "
-                    "based on web_search results. Not for database questions (use submit_answer)."
+                    "based on web_search or get_quote results. Not for database questions (use submit_answer)."
                 ),
                 parameters={
                     "type": "object",
